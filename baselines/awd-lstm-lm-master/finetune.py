@@ -176,7 +176,6 @@ def train():
 with open(args.save, 'rb') as f:
     model = torch.load(f)
 
-
 # Loop over epochs.
 lr = args.lr
 stored_loss = evaluate(val_data)
