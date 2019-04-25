@@ -301,6 +301,9 @@ try:
                                                val_loss, math.exp(val_loss)))
             logging('-' * 89)
 
+            # ADDED BY JOVAN, FLUSHING IS NEEDED WHEN RUNNING EXPERIMENTS ON LEONHARD
+            sys.stdout.flush()
+
             if val_loss < stored_loss:
                 save_checkpoint(model, optimizer, args.save)
                 logging('Saving Normal!')
