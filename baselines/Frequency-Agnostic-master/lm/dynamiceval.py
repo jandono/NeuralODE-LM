@@ -70,7 +70,8 @@ def batchify(data, bsz):
 
 def repackage_hidden(h):
     """Wraps hidden states in new Variables, to detach them from their history."""
-    if type(h) == Variable:
+#    if type(h) == Variable:
+    if isinstance(h, Variable):
         return Variable(h.data)
     else:
         return tuple(repackage_hidden(v) for v in h)
@@ -208,7 +209,7 @@ def evaluate():
 
 #load model
 with open(model_name, 'rb') as f:
-    model = torch.load(f)
+    model, _, _  = torch.load(f)
 
 ntokens = len(corpus.dictionary)
 criterion = nn.CrossEntropyLoss()

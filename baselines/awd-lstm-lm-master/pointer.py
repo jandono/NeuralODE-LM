@@ -115,9 +115,9 @@ def evaluate(data_source, batch_size=10, window=args.window):
 # Load the best saved model.
 with open(args.save, 'rb') as f:
     if not args.cuda:
-        model = torch.load(f, map_location=lambda storage, loc: storage)
+        model, _, _ = torch.load(f, map_location=lambda storage, loc: storage)
     else:
-        model = torch.load(f)
+        model, _, _  = torch.load(f)
 print(model)
 
 # Run on val data.
