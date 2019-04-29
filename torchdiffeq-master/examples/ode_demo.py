@@ -54,6 +54,12 @@ def makedirs(dirname):
         os.makedirs(dirname)
 
 
+from sys import platform as sys_pf
+if sys_pf == 'darwin':
+    import matplotlib
+    matplotlib.use("TkAgg")
+
+
 if args.viz:
     makedirs('png')
     import matplotlib.pyplot as plt

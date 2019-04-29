@@ -25,8 +25,10 @@ class ODEfunc(nn.Module):
         self.nfe = 0
 
     def forward(self, t, x):
+        # For simple cases time can be omitted.
+        # However, for CNF they mention that they use a Hypernetwork or Concatenation
         self.nfe += 1
-        out = self.linear(x)  # MNIST example concatenates the time with the input
+        out = self.linear(x)
         out = self.relu(out)
         return out
 
@@ -88,7 +90,7 @@ class RNNModel(nn.Module):
         self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
 
         self.decoder = nn.Linear(ninp, ntoken)
-        # self.ode = ODEBlock(ODEfunc(ntoken), 1e-3, 1e-3)
+        self.ode = ODEBlock(ODEfunc(ntoken), 1e-3, 1e-3)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -168,7 +170,7 @@ class RNNModel(nn.Module):
         logit = self.decoder(output)
         # print('Logit size: ', logit.size())
 
-        # transformed = self.ode(logit)
+        transformed = self.ode(logit)
 
         # COMMENTED OUT BY JOVAN, DEBUGGING
         # prior_logit = self.prior(output).contiguous().view(-1, self.n_experts)
@@ -178,8 +180,8 @@ class RNNModel(nn.Module):
         # prob = (prob * prior.unsqueeze(2).expand_as(prob)).sum(1)
 
         # ADDED BY JOVAN, DEBUGGING
-        # prob = nn.functional.softmax(transformed, -1)
-        prob = nn.functional.softmax(logit, -1)
+        prob = nn.functional.softmax(transformed, -1)
+        # prob = nn.functional.softmax(logit, -1)
         # print('Prob size: ', prob.size())
 
         if return_prob:
