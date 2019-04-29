@@ -62,7 +62,7 @@ class RNNModel(nn.Module):
     #              dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0,
     #              tie_weights=False, ldropout=0.5, n_experts=10):
 
-    # ADDED BY JOVAN, DEBUGGING
+    # ADDED BY JOVAN, n_experts not needed
     def __init__(self, rnn_type, ntoken, ninp, nhid, nhidlast, nlayers,
                  dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0,
                  tie_weights=False, ldropout=0.5):
@@ -71,8 +71,10 @@ class RNNModel(nn.Module):
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
 
+        # COMENTED OUT BY JOVAN, DEBUGGING
         self.rnns = [torch.nn.LSTM(ninp if l == 0 else nhid, nhid if l != nlayers - 1 else nhidlast, 1, dropout=0) for l
                      in range(nlayers)]
+
         if wdrop:
             self.rnns = [WeightDrop(rnn, ['weight_hh_l0'], dropout=wdrop if self.use_dropout else 0) for rnn in
                          self.rnns]
@@ -86,7 +88,7 @@ class RNNModel(nn.Module):
         self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
 
         self.decoder = nn.Linear(ninp, ntoken)
-        self.ode = ODEBlock(ODEfunc(ntoken), 1e-3, 1e-3)
+        # self.ode = ODEBlock(ODEfunc(ntoken), 1e-3, 1e-3)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -154,12 +156,19 @@ class RNNModel(nn.Module):
         hidden = new_hidden
 
         output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
+        # print('Output size: ', output.size())
         outputs.append(output)
 
-        latent = self.latent(output)
-        latent = self.lockdrop(latent, self.dropoutl if self.use_dropout else 0)
-        logit = self.decoder(latent.view(-1, self.ninp))
-        transformed = self.ode(logit)
+        # latent = self.latent(output)
+        # print('Latent size: ', latent.size())
+        # latent = self.lockdrop(latent, self.dropoutl if self.use_dropout else 0)
+        # logit = self.decoder(latent.view(-1, self.ninp))
+        # print('Logit size: ', logit.size())
+
+        logit = self.decoder(output)
+        # print('Logit size: ', logit.size())
+
+        # transformed = self.ode(logit)
 
         # COMMENTED OUT BY JOVAN, DEBUGGING
         # prior_logit = self.prior(output).contiguous().view(-1, self.n_experts)
@@ -169,7 +178,9 @@ class RNNModel(nn.Module):
         # prob = (prob * prior.unsqueeze(2).expand_as(prob)).sum(1)
 
         # ADDED BY JOVAN, DEBUGGING
-        prob = nn.functional.softmax(transformed, -1)
+        # prob = nn.functional.softmax(transformed, -1)
+        prob = nn.functional.softmax(logit, -1)
+        print('Prob size: ', prob.size())
 
         if return_prob:
             model_output = prob
@@ -182,6 +193,8 @@ class RNNModel(nn.Module):
             model_output = log_prob
 
         model_output = model_output.view(-1, batch_size, self.ntoken)
+        print('Model output size: ', model_output.size())
+        print('\n' + 80*'#' + '\n')
 
         if return_h:
             return model_output, hidden, raw_outputs, outputs
