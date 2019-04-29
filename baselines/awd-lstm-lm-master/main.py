@@ -197,6 +197,7 @@ def train():
         optimizer.zero_grad()
 
         output, hidden, rnn_hs, dropped_rnn_hs = model(data, hidden, return_h=True)
+
         raw_loss = criterion(model.decoder.weight, model.decoder.bias, output, targets)
 
         loss = raw_loss

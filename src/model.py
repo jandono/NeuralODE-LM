@@ -180,7 +180,7 @@ class RNNModel(nn.Module):
         # ADDED BY JOVAN, DEBUGGING
         # prob = nn.functional.softmax(transformed, -1)
         prob = nn.functional.softmax(logit, -1)
-        print('Prob size: ', prob.size())
+        # print('Prob size: ', prob.size())
 
         if return_prob:
             model_output = prob
@@ -193,8 +193,8 @@ class RNNModel(nn.Module):
             model_output = log_prob
 
         model_output = model_output.view(-1, batch_size, self.ntoken)
-        print('Model output size: ', model_output.size())
-        print('\n' + 80*'#' + '\n')
+        # print('Model output size: ', model_output.size())
+        # print('\n' + 80*'#' + '\n')
 
         if return_h:
             return model_output, hidden, raw_outputs, outputs

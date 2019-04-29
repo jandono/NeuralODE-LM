@@ -89,10 +89,9 @@ class RNNModel(nn.Module):
 
         output = self.lockdrop(raw_output, self.dropout)
         outputs.append(output)
-        print(output.size())
-        print(output[231])
 
         result = output.view(output.size(0)*output.size(1), output.size(2))
+
         if return_h:
             return result, hidden, raw_outputs, outputs
         return result, hidden
