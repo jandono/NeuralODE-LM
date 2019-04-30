@@ -277,6 +277,9 @@ try:
             #optimizer.param_groups[0]['lr'] /= 2.
         best_val_loss.append(val_loss2)
 
+        # ADDED BY JOVAN, FLUSHING IS NEEDED WHEN RUNNING EXPERIMENTS ON LEONHARD
+        sys.stdout.flush()
+
 except KeyboardInterrupt:
     logging('-' * 89)
     logging('Exiting from training early')
