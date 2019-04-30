@@ -44,7 +44,7 @@ class ODEBlock(nn.Module):
 
     def forward(self, x):
         self.integration_time = self.integration_time.type_as(x)
-        out = odeint(self.odefunc, x, self.integration_time, rtol=self.rtol, atol=self.rtol)
+        out = odeint(self.odefunc, x, self.integration_time, rtol=self.rtol, atol=self.atol)
         return out[1]
 
     @property
