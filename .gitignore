@@ -4,3 +4,4 @@ src/PTB*
 baselines/*
 *pycache*
 torchdiffeq-master/*
+ffjord-master/i*
