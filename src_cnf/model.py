@@ -21,6 +21,13 @@ from layers.diffeq_layers import ConcatLinear
 from torch.distributions import MultivariateNormal
 
 
+def mvn_log_prob(x, mu):
+    batch = x.shape[0]
+    k = x.shape[1]
+    diff = (x - mu).view(batch, 1, k)
+    return torch.squeeze(-0.5 * torch.bmm(diff, torch.transpose(diff, 1, 2)) - k/2 * math.log(2 * math.pi))
+
+
 class ODEnet(nn.Module):
 
     def __init__(self, dim):
@@ -82,16 +89,20 @@ class CNFBlock(nn.Module):
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
             # print('zeros shape', zeros.shape)
 
-            # if i % 10 == 0:
-            #     print('{} | {}'.format(i, seq_length*batch_size)
+            if i % 10 == 0:
+                print('{} | {}'.format(i, seq_length*batch_size))
 
             # z0 = torch.eye(self.ntoken).to(emb_matrix).matmul(emb_matrix)
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
             # print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
             l_delta_logpz.append(torch.squeeze(tmp_delta_log_pz))
-            mu = h[i]
-            mvn = MultivariateNormal(mu, sigma)
+
+            # print('mu shape', mu.shape)
+            mvn = MultivariateNormal(h[i], sigma)
             tmp_log_pz0 = mvn.log_prob(emb_matrix)
+            # print('tmp_log_pz0 shape', tmp_log_pz0.shape)
+
+            # tmp_log_pz0 = mvn_log_prob(emb_matrix, h[i])
             l_logpz0.append(tmp_log_pz0)
 
         # print('CNF Done')
