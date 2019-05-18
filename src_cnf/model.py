@@ -79,6 +79,8 @@ class CNFBlock(nn.Module):
         l_delta_logpz = []
         for i in range(seq_length * batch_size):
             zeros = torch.zeros(self.ntoken).to(emb_matrix)
+            print('zeros shape', zeros.shape)
+
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
             print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
             l_delta_logpz.append(tmp_delta_log_pz)
