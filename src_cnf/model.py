@@ -95,8 +95,8 @@ class CNFBlock(nn.Module):
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
             # print('zeros shape', zeros.shape)
 
-            if i % 10 == 0:
-                print('{} | {}'.format(i, seq_length*batch_size))
+            # if i % 10 == 0:
+            #     print('{} | {}'.format(i, seq_length*batch_size))
 
             # z0 = torch.eye(self.ntoken).to(emb_matrix).matmul(emb_matrix)
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
