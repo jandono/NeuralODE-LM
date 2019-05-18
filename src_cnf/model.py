@@ -236,10 +236,10 @@ class RNNModel(nn.Module):
         #
         # # transformed = self.ode(logit)
         # transformed = logit
-        prob = nn.functional.softmax(log_pz1, -1)
-        print('prob shape', prob.shape)
 
-        assert torch.sum()
+        # converts the log densities to discrete probabilities
+        prob = nn.functional.softmax(log_pz1, -1)
+        # print('prob shape', prob.shape)
 
         if return_prob:
             model_output = prob
