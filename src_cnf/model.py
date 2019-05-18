@@ -74,10 +74,10 @@ class CNFBlock(nn.Module):
         print('emb matrix shape', emb_matrix.shape)
 
         l_z0 = [emb_matrix] * seq_length * batch_size
-        z0 = torch.stack(l_z0).view(-1, emb_size)
+        z0 = torch.stack(l_z0).view(-1, emb_size).to(encoder)
         print('z0 shape', z0.shape)
 
-        zeros = torch.zeros(seq_length * batch_size * self.ntoken)
+        zeros = torch.zeros(seq_length * batch_size * self.ntoken).to(z0)
 
         print('CNF...')
         z1, delta_log_pz = self.cnf(z0, zeros)

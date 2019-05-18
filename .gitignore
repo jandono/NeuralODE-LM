@@ -2,6 +2,6 @@ data/*
 .idea
 src/PTB*
 baselines/*
-*pycache*
+*__pycache__*
 torchdiffeq-master/*
 ffjord-master/*
