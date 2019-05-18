@@ -13,8 +13,8 @@ from weight_drop import WeightDrop
 # else:
 #     from torchdiffeq import odeint
 
-from torchdiffeq import odeint_adjoint as odeint
-
+# from torchdiffeq import odeint_adjoint as odeint
+from torchdiffeq import odeint
 
 class ODEfunc(nn.Module):
 
