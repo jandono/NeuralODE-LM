@@ -73,10 +73,11 @@ class CNFBlock(nn.Module):
         emb_matrix = encoder.weight
         # print('emb matrix shape', emb_matrix.shape)
 
-        # print('CNF...')
+        print('CNF...')
 
         l_logpz0 = []
         l_delta_logpz = []
+        sigma = torch.eye(emb_size).to(emb_matrix)
         for i in range(seq_length * batch_size):
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
             # print('zeros shape', zeros.shape)
@@ -85,7 +86,8 @@ class CNFBlock(nn.Module):
             _, tmp_delta_log_pz = self.cnf(z0, zeros)
             # print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
             l_delta_logpz.append(torch.squeeze(tmp_delta_log_pz))
-            mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)))
+            mu = h[i]
+            mvn = MultivariateNormal(mu, sigma)
             tmp_log_pz0 = mvn.log_prob(emb_matrix)
             l_logpz0.append(tmp_log_pz0)
 
