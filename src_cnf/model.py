@@ -91,6 +91,8 @@ class CNFBlock(nn.Module):
         l_logpz0 = []
         l_delta_logpz = []
         for i in range(seq_length * batch_size):
+
+            # print('{} | {}'.format(i, seq_length*batch_size))
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
             l_delta_logpz.append(torch.squeeze(tmp_delta_log_pz))
