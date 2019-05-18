@@ -68,12 +68,12 @@ class CNFBlock(nn.Module):
 
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
-        # print('h shape', h.shape)
+        print('h shape', h.shape)
 
         emb_matrix = encoder.weight
-        # print('emb matrix shape', emb_matrix.shape)
+        print('emb matrix shape', emb_matrix.shape)
 
-        # print('CNF...')
+        print('CNF...')
 
         l_logpz0 = []
         l_delta_logpz = []
@@ -83,26 +83,26 @@ class CNFBlock(nn.Module):
 
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
             # print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
-            l_delta_logpz.append(torch.squeeze(tmp_delta_log_pz))
+            l_delta_logpz.append(tmp_delta_log_pz)
             mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)))
             tmp_log_pz0 = mvn.log_prob(emb_matrix)
             l_logpz0.append(tmp_log_pz0)
 
-        # print('CNF Done')
+        print('CNF Done')
 
-        log_pz0 = torch.stack(l_logpz0).view(-1, self.ntoken)
-        # print('log_pz0 shape', log_pz0.shape)
+        log_pz0 = torch.stack(l_logpz0).view(-1)
+        print('log_pz0 shape', log_pz0.shape)
 
         delta_log_pz = torch.stack(l_delta_logpz)
-        # print('delta_log_pz', delta_log_pz.shape)
+        print('delta_log_pz', delta_log_pz.shape)
 
         log_pz1 = log_pz0 - delta_log_pz
-        # print('log_pz1 shape', log_pz1.shape)
+        print('log_pz1 shape', log_pz1.shape)
 
         log_pz1 = log_pz1.view(-1, self.ntoken)
-        # print('log_pz1 shape', log_pz1.shape)
+        print('log_pz1 shape', log_pz1.shape)
 
-        return log_pz1
+        return _, log_pz1
 
 
 class RNNModel(nn.Module):
@@ -169,7 +169,7 @@ class RNNModel(nn.Module):
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
 
-        # print('input shape', input.shape)
+        print('input shape', input.shape)
 
         seq_length = input.size(0)
         batch_size = input.size(1)
@@ -199,7 +199,7 @@ class RNNModel(nn.Module):
         output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
         outputs.append(output)
 
-        # print('output shape', output.shape)
+        print('output shape', output.shape)
 
         if self.nhidlast != self.ninp:
             output = self.latent(output)
@@ -208,12 +208,12 @@ class RNNModel(nn.Module):
         # Continuous Normalizing Flows
         ############################################################
 
-        # print('output shape', output.shape)
+        print('output shape', output.shape)
 
-        log_pz1 = self.cnf(output, self.encoder)
+        z1, log_pz1 = self.cnf(output, self.encoder)
 
-        # print('log_pz1 shape', log_pz1.shape)
-        # assert 1 == 0
+        print('log_pz1 shape', log_pz1.shape)
+        assert 1 == 0
         ############################################################
 
         # logit = self.decoder(output)
