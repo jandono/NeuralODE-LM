@@ -94,6 +94,7 @@ class RNNModel(nn.Module):
         outputs.append(output)
 
         latent = self.latent(output)
+
         latent = self.lockdrop(latent, self.dropoutl if self.use_dropout else 0)
         logit = self.decoder(latent.view(-1, self.ninp))
 
@@ -102,6 +103,7 @@ class RNNModel(nn.Module):
 
         prob = nn.functional.softmax(logit.view(-1, self.ntoken), -1).view(-1, self.n_experts, self.ntoken)
         prob = (prob * prior.unsqueeze(2).expand_as(prob)).sum(1)
+
 
         if return_prob:
             model_output = prob
