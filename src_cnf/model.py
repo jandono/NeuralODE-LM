@@ -90,21 +90,12 @@ class CNFBlock(nn.Module):
 
         l_logpz0 = []
         l_delta_logpz = []
-        sigma = torch.eye(emb_size).to(emb_matrix)
         for i in range(seq_length * batch_size):
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
-            # print('zeros shape', zeros.shape)
-
-            # if i % 10 == 0:
-            #     print('{} | {}'.format(i, seq_length*batch_size))
-
-            # z0 = torch.eye(self.ntoken).to(emb_matrix).matmul(emb_matrix)
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
-            # print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
             l_delta_logpz.append(torch.squeeze(tmp_delta_log_pz))
 
-            # print('mu shape', mu.shape)
-            # mvn = MultivariateNormal(h[i], sigma)
+            # mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0))
             # tmp_log_pz0 = mvn.log_prob(emb_matrix)
             # print('tmp_log_pz0 shape', tmp_log_pz0.shape)
 
@@ -245,15 +236,16 @@ class RNNModel(nn.Module):
         #
         # # transformed = self.ode(logit)
         # transformed = logit
-        # prob = nn.functional.softmax(transformed, -1)
-        #
-        # if return_prob:
-        #     model_output = prob
-        # else:
-        #     log_prob = torch.log(torch.add(prob, 1e-8))
-        #     model_output = log_prob
+        prob = nn.functional.softmax(log_pz1, -1)
+        # print('prob shape', prob.shape)
 
-        model_output = log_pz1
+        if return_prob:
+            model_output = prob
+        else:
+            log_prob = torch.log(torch.add(prob, 1e-8))
+            model_output = log_prob
+
+        # model_output = log_pz1
         model_output = model_output.view(-1, batch_size, self.ntoken)
 
         if return_h:
