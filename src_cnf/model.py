@@ -81,14 +81,15 @@ class CNFBlock(nn.Module):
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
             # print('zeros shape', zeros.shape)
 
-            _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
+            z0 = torch.eye(self.ntoken).to(emb_matrix).matmul(emb_matrix)
+            _, tmp_delta_log_pz = self.cnf(z0, zeros)
             # print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
             l_delta_logpz.append(torch.squeeze(tmp_delta_log_pz))
             mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)).cuda())
             tmp_log_pz0 = mvn.log_prob(emb_matrix)
             l_logpz0.append(tmp_log_pz0)
 
-        # print('CNF Done')
+        print('CNF Done')
 
         log_pz0 = torch.stack(l_logpz0).view(-1, self.ntoken)
         # print('log_pz0 shape', log_pz0.shape)
