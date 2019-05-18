@@ -82,8 +82,8 @@ class CNFBlock(nn.Module):
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
             # print('zeros shape', zeros.shape)
 
-            z0 = torch.eye(self.ntoken).to(emb_matrix).matmul(emb_matrix)
-            _, tmp_delta_log_pz = self.cnf(z0, zeros)
+            # z0 = torch.eye(self.ntoken).to(emb_matrix).matmul(emb_matrix)
+            _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
             # print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
             l_delta_logpz.append(torch.squeeze(tmp_delta_log_pz))
             mu = h[i]
