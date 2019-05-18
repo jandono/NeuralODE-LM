@@ -73,27 +73,26 @@ class CNFBlock(nn.Module):
         emb_matrix = encoder.weight
         print('emb matrix shape', emb_matrix.shape)
 
-        l_z0 = [emb_matrix] * seq_length * batch_size
-        z0 = torch.stack(l_z0).view(-1, emb_size).to(encoder)
-        print('z0 shape', z0.shape)
-
-        zeros = torch.zeros(seq_length * batch_size * self.ntoken).to(z0)
-
         print('CNF...')
-        z1, delta_log_pz = self.cnf(z0, zeros)
-        print('CNF Done')
-
-        print('z1 shape', z1.shape)
-        print('delta_log_pz', delta_log_pz.shape)
 
         l_logpz0 = []
+        l_delta_logpz = []
         for i in range(seq_length * batch_size):
+            zeros = torch.zeros(self.ntoken).to(emb_matrix)
+            _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
+            print('{} tmp_delta_log_pz {}'.format(i, tmp_delta_log_pz.shape))
+            l_delta_logpz.append(tmp_delta_log_pz)
             mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)))
             tmp_log_pz0 = mvn.log_prob(emb_matrix)
             l_logpz0.append(tmp_log_pz0)
 
+        print('CNF Done')
+
         log_pz0 = torch.stack(l_logpz0).view(-1)
         print('log_pz0 shape', log_pz0.shape)
+
+        delta_log_pz = torch.stack(l_delta_logpz)
+        print('delta_log_pz', delta_log_pz.shape)
 
         log_pz1 = log_pz0 - delta_log_pz
         print('log_pz1 shape', log_pz1.shape)
