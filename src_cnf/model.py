@@ -237,7 +237,9 @@ class RNNModel(nn.Module):
         # # transformed = self.ode(logit)
         # transformed = logit
         prob = nn.functional.softmax(log_pz1, -1)
-        # print('prob shape', prob.shape)
+        print('prob shape', prob.shape)
+
+        assert torch.sum()
 
         if return_prob:
             model_output = prob
