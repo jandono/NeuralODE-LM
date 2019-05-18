@@ -14,46 +14,94 @@ from weight_drop import WeightDrop
 #     from torchdiffeq import odeint
 
 from torchdiffeq import odeint_adjoint as odeint
+import layers
+from layers.odefunc import divergence_bf, divergence_approx
+from layers.odefunc import sample_gaussian_like, sample_rademacher_like
+from layers.diffeq_layers import ConcatLinear
+from torch.distributions import MultivariateNormal
 
 
-class ODEfunc(nn.Module):
+class ODEnet(nn.Module):
 
     def __init__(self, dim):
-        super(ODEfunc, self).__init__()
-        self.linear = nn.Linear(dim, dim)
+        super(ODEnet, self).__init__()
+        self.cc_linear = ConcatLinear(dim, dim)
         self.relu = nn.ReLU(inplace=True)  # Inplace can cause problems
-        self.nfe = 0
+        # self.nfe = 0
 
     def forward(self, t, x):
         # For simple cases time can be omitted.
         # However, for CNF they mention that they use a Hypernetwork or Concatenation
-        self.nfe += 1
-        out = self.linear(x)
+        # self.nfe += 1
+        out = self.cc_linear(t, x)
         out = self.relu(out)
         return out
 
 
-class ODEBlock(nn.Module):
+class CNFBlock(nn.Module):
 
-    def __init__(self, odefunc, rtol, atol):
-        super(ODEBlock, self).__init__()
-        self.odefunc = odefunc
-        self.integration_time = torch.tensor([0, 1]).float()
-        self.rtol = rtol
-        self.atol = atol
+    def __init__(self, ninp, ntoken):
+        super(CNFBlock, self).__init__()
 
-    def forward(self, x):
-        self.integration_time = self.integration_time.type_as(x)
-        out = odeint(self.odefunc, x, self.integration_time, rtol=self.rtol, atol=self.atol)
-        return out[1]
+        def build_cnf(ninp):
+            diffeq = ODEnet(ninp)
+            odefunc = layers.ODEfunc(
+                diffeq=diffeq,
+                # divergence_fn=args.divergence_fn,
+                # residual=args.residual,
+                # rademacher=args.rademacher,
+            )
+            cnf = layers.CNF(
+                odefunc=odefunc,
+                # T=args.time_length,
+                # train_T=args.train_T,
+                # regularization_fns=None,
+                # solver=args.solver,
+            )
+            return cnf
 
-    @property
-    def nfe(self):
-        return self.odefunc.nfe
+        self.ninp = ninp
+        self.ntoken = ntoken
+        self.cnf = build_cnf(ninp)
 
-    @nfe.setter
-    def nfe(self, value):
-        self.odefunc.nfe = value
+    def forward(self, h, encoder):
+
+        seq_length, batch_size, emb_size = h.shape
+        h = h.view(seq_length * batch_size, emb_size)
+        print('h shape', h.shape)
+
+        emb_matrix = encoder.weight
+        print('emb matrix shape', emb_matrix.shape)
+
+        l_z0 = [emb_matrix] * seq_length * batch_size
+        z0 = torch.stack(l_z0).view(-1, emb_size)
+        print('z0 shape', z0.shape)
+
+        zeros = torch.zeros(seq_length * batch_size * self.ntoken)
+
+        print('CNF...')
+        z1, delta_log_pz = self.cnf(z0, zeros)
+        print('CNF Done')
+
+        print('z1 shape', z1.shape)
+        print('delta_log_pz', delta_log_pz.shape)
+
+        l_logpz0 = []
+        for i in range(seq_length * batch_size):
+            mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)))
+            tmp_log_pz0 = mvn.log_prob(emb_matrix)
+            l_logpz0.append(tmp_log_pz0)
+
+        log_pz0 = torch.stack(l_logpz0).view(-1)
+        print('log_pz0 shape', log_pz0.shape)
+
+        log_pz1 = log_pz0 - delta_log_pz
+        print('log_pz1 shape', log_pz1.shape)
+
+        log_pz1 = log_pz1.view(-1, self.ntoken)
+        print('log_pz1 shape', log_pz1.shape)
+
+        return z1, log_pz1
 
 
 class RNNModel(nn.Module):
@@ -75,12 +123,11 @@ class RNNModel(nn.Module):
                          self.rnns]
         self.rnns = torch.nn.ModuleList(self.rnns)
 
-        # ADDED BY JOVAN, DEBUGGING
         if nhidlast != ninp:
             self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
 
         self.decoder = nn.Linear(ninp, ntoken)
-        self.ode = ODEBlock(ODEfunc(ntoken), 1e-3, 1e-3)
+        self.cnf = CNFBlock(ninp, ntoken)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -120,6 +167,10 @@ class RNNModel(nn.Module):
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
+
+        print('input shape', input.shape)
+
+        seq_length = input.size(0)
         batch_size = input.size(1)
 
         emb = embedded_dropout(self.encoder, input,
@@ -147,20 +198,38 @@ class RNNModel(nn.Module):
         output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
         outputs.append(output)
 
+        print('output shape', output.shape)
+
         if self.nhidlast != self.ninp:
             output = self.latent(output)
 
-        logit = self.decoder(output)
-        transformed = self.ode(logit)
+        ############################################################
+        # Continuous Normalizing Flows
+        ############################################################
 
-        prob = nn.functional.softmax(transformed, -1)
+        print('output shape', output.shape)
 
-        if return_prob:
-            model_output = prob
-        else:
-            log_prob = torch.log(torch.add(prob, 1e-8))
-            model_output = log_prob
+        z1, log_pz1 = self.cnf(output, self.encoder)
 
+        print('log_pz1 shape', log_pz1.shape)
+        assert 1 == 0
+        ############################################################
+
+        # logit = self.decoder(output)
+        # print('logit shape', logit.shape)
+        # assert 1 == 0
+        #
+        # # transformed = self.ode(logit)
+        # transformed = logit
+        # prob = nn.functional.softmax(transformed, -1)
+        #
+        # if return_prob:
+        #     model_output = prob
+        # else:
+        #     log_prob = torch.log(torch.add(prob, 1e-8))
+        #     model_output = log_prob
+
+        model_output = log_pz1
         model_output = model_output.view(-1, batch_size, self.ntoken)
 
         if return_h:
@@ -177,6 +246,7 @@ class RNNModel(nn.Module):
 if __name__ == '__main__':
     model = RNNModel('LSTM', 10, 12, 12, 12, 2)
     input = Variable(torch.LongTensor(13, 9).random_(0, 10))
+    print('input', input)
     hidden = model.init_hidden(9)
     model(input, hidden)
 

@@ -147,13 +147,18 @@ class RNNModel(nn.Module):
         output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
         outputs.append(output)
 
+        print('h shape', output.shape)
+
         if self.nhidlast != self.ninp:
             output = self.latent(output)
 
         logit = self.decoder(output)
+        print('logit shape', logit.shape)
         transformed = self.ode(logit)
+        print('transformed shape', transformed.shape)
 
         prob = nn.functional.softmax(transformed, -1)
+        print('prob shape', prob.shape)
 
         if return_prob:
             model_output = prob
@@ -162,6 +167,7 @@ class RNNModel(nn.Module):
             model_output = log_prob
 
         model_output = model_output.view(-1, batch_size, self.ntoken)
+        print('model output shape', model_output.shape)
 
         if return_h:
             return model_output, hidden, raw_outputs, outputs
