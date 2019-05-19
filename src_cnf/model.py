@@ -77,14 +77,11 @@ class CNFBlock(nn.Module):
         self.mvn_log_prob = MVNLogProb()
         self.cnf = build_cnf(ninp)
 
-    def forward(self, h, encoder):
+    def forward(self, h, emb_matrix):
 
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
         # print('h shape', h.shape)
-
-        emb_matrix = encoder.weight
-        # print('emb matrix shape', emb_matrix.shape)
 
         # print('CNF...')
 
@@ -226,14 +223,14 @@ class RNNModel(nn.Module):
 
         # print('output shape', output.shape)
 
-        # log_pz1 = self.cnf(output, self.encoder)
+        log_pz1 = self.cnf(output, self.encoder.weight)
 
         # print('log_pz1 shape', log_pz1.shape)
         # assert 1 == 0
         ############################################################
 
-        logit = self.decoder(output)
-        prob = nn.functional.softmax(logit, -1)
+        # logit = self.decoder(output)
+        # prob = nn.functional.softmax(logit, -1)
         # print('logit shape', logit.shape)
         # assert 1 == 0
         #
@@ -241,7 +238,7 @@ class RNNModel(nn.Module):
         # transformed = logit
 
         # converts the log densities to discrete probabilities
-        # prob = nn.functional.softmax(log_pz1, -1)
+        prob = nn.functional.softmax(log_pz1, -1)
         # print('prob shape', prob.shape)
 
         if return_prob:

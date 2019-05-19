@@ -205,11 +205,6 @@ def train():
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
-            # if i == 0 and start == 0:
-            #     with SummaryWriter(comment='RNN') as w:
-            #         dummy_input = (torch.zeros(1, 3),)
-            #         w.add_graph(parallel_model, dummy_input, verbose=True)
-
             log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
             raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
 
