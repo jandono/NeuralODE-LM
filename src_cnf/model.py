@@ -226,13 +226,14 @@ class RNNModel(nn.Module):
 
         # print('output shape', output.shape)
 
-        log_pz1 = self.cnf(output, self.encoder)
+        # log_pz1 = self.cnf(output, self.encoder)
 
         # print('log_pz1 shape', log_pz1.shape)
         # assert 1 == 0
         ############################################################
 
-        # logit = self.decoder(output)
+        logit = self.decoder(output)
+        prob = nn.functional.softmax(logit, -1)
         # print('logit shape', logit.shape)
         # assert 1 == 0
         #
@@ -240,7 +241,7 @@ class RNNModel(nn.Module):
         # transformed = logit
 
         # converts the log densities to discrete probabilities
-        prob = nn.functional.softmax(log_pz1, -1)
+        # prob = nn.functional.softmax(log_pz1, -1)
         # print('prob shape', prob.shape)
 
         if return_prob:
