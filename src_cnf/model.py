@@ -98,7 +98,7 @@ class CNFBlock(nn.Module):
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
             l_delta_logpz.append(tmp_delta_log_pz)
 
-            mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)))
+            mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)).to(h[i]))
             tmp_log_pz0 = mvn.log_prob(emb_matrix)
 
             # tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
