@@ -85,38 +85,45 @@ class CNFBlock(nn.Module):
 
         # print('CNF...')
 
-        print('emb_matrix requires_grad =', emb_matrix.requires_grad)
+        # print('h requires_grad =', h.requires_grad)
+        # print('emb_matrix requires_grad =', emb_matrix.requires_grad)
 
         l_logpz0 = []
         l_delta_logpz = []
         for i in range(seq_length * batch_size):
 
             # print('{} | {}'.format(i, seq_length*batch_size))
-            # zero = torch.zeros(x.shape[0], 1).to(x)
 
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
             _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
             l_delta_logpz.append(tmp_delta_log_pz)
 
-            mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)).to(h[i]))
-            tmp_log_pz0 = mvn.log_prob(emb_matrix)
+            # mb = 100
+            # for j in range(self.ntoken // mb):
+            #     # zeros = torch.zeros(1).to(emb_matrix)
+            #     print('{}'.format(j))
+            #     _, tmp_delta_log_pz = self.cnf(emb_matrix[j*mb: (j+1)*mb], zeros[j*mb: (j+1)*mb])
+            #     l_delta_logpz.append(tmp_delta_log_pz)
 
-            # tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
+            # mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)).to(h[i]))
+            # tmp_log_pz0 = mvn.log_prob(emb_matrix)
+
+            tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
             l_logpz0.append(tmp_log_pz0)
 
         # print('CNF Done')
 
         log_pz0 = torch.stack(l_logpz0).view(-1, self.ntoken)
-        print('log_pz0 shape', log_pz0.shape)
-        print('log_pz0 requires_grad =', log_pz0.requires_grad)
+        # print('log_pz0 shape', log_pz0.shape)
+        # print('log_pz0 requires_grad =', log_pz0.requires_grad)
 
         delta_log_pz = torch.stack(l_delta_logpz).view(-1, self.ntoken)
-        print('delta_log_pz', delta_log_pz.shape)
-        print('delta_log_pz requires_grad =', delta_log_pz.requires_grad)
+        # print('delta_log_pz', delta_log_pz.shape)
+        # print('delta_log_pz requires_grad =', delta_log_pz.requires_grad)
 
         log_pz1 = log_pz0 - delta_log_pz
-        print('log_pz1 shape', log_pz1.shape)
-        print('log_pz1 requires_grad =', log_pz1.requires_grad)
+        # print('log_pz1 shape', log_pz1.shape)
+        # print('log_pz1 requires_grad =', log_pz1.requires_grad)
 
         return log_pz1
 
