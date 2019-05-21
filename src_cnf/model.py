@@ -1,4 +1,3 @@
-import sys
 import math
 import torch
 import torch.nn as nn
@@ -9,15 +8,7 @@ from embed_regularize import embedded_dropout
 from locked_dropout import LockedDropout
 from weight_drop import WeightDrop
 
-# if args.adjoint:
-#     from torchdiffeq import odeint_adjoint as odeint
-# else:
-#     from torchdiffeq import odeint
-
-from torchdiffeq import odeint_adjoint as odeint
 import layers
-from layers.odefunc import divergence_bf, divergence_approx
-from layers.odefunc import sample_gaussian_like, sample_rademacher_like
 from layers.diffeq_layers import ConcatLinear
 from torch.distributions import MultivariateNormal
 
@@ -31,7 +22,22 @@ class MVNLogProb(nn.Module):
         batch = x.shape[0]
         k = x.shape[1]
         diff = (x - mu).view(batch, 1, k)
-        return torch.squeeze(-0.5 * torch.bmm(diff, torch.transpose(diff, 1, 2)) - k/2 * math.log(2 * math.pi))
+        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - k/2 * math.log(2 * math.pi)
+
+
+class MVNLogProbBatched(nn.Module):
+
+    def __init__(self, ntoken):
+        super(MVNLogProbBatched, self).__init__()
+        self.ntoken = ntoken
+
+    def forward(self, x, mu):
+        batch = x.shape[0]
+        k = x.shape[1]
+        mu = mu.repeat(1, self.ntoken).view(-1, k)
+
+        diff = (x - mu).view(batch, 1, k)
+        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - k/2 * math.log(2 * math.pi)
 
 
 class ODEnet(nn.Module):
@@ -75,71 +81,23 @@ class CNFBlock(nn.Module):
 
         self.ninp = ninp
         self.ntoken = ntoken
-        self.mvn_log_prob = MVNLogProb()
+        # self.mvn_log_prob = MVNLogProb()
+        self.mvn_log_prob_batched = MVNLogProbBatched(self.ntoken)
         self.cnf = build_cnf(ninp)
 
     def forward(self, h, emb_matrix):
 
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
-        # print('h shape', h.shape)
-
-        # print('CNF...')
-
-        # print('h requires_grad =', h.requires_grad)
-        # print('emb_matrix requires_grad =', emb_matrix.requires_grad)
-
-        l_logpz0 = []
-        l_delta_logpz = []
 
         z0 = emb_matrix.repeat(seq_length * batch_size, 1)
-        # print('z0 shape ', z0.shape)
-
         zeros = torch.zeros(seq_length * batch_size * self.ntoken, 1).to(emb_matrix)
-        # print('zeros shape ', zeros.shape)
 
         _, delta_log_pz = self.cnf(z0, zeros)
         delta_log_pz = delta_log_pz.view(-1, self.ntoken)
 
-        # log_pz0 = self.mvn_log_prob_batched(z0, h)
-
-        # print('delta_log_pz shape', delta_log_pz.shape)
-        # l_delta_logpz.append(tmp_delta_log_pz)
-
-        for i in range(seq_length * batch_size):
-
-            # print('{} | {}'.format(i, seq_length*batch_size))
-
-            # zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
-            # _, tmp_delta_log_pz = self.cnf(emb_matrix, zeros)
-            # l_delta_logpz.append(tmp_delta_log_pz)
-
-            # mb = 1
-            # for j in range(self.ntoken // mb):
-            #     # zeros = torch.zeros(1).to(emb_matrix)
-            #     print('{}'.format(j))
-            #     _, tmp_delta_log_pz = self.cnf(emb_matrix[j*mb: (j+1)*mb], zeros[j*mb: (j+1)*mb])
-            #     l_delta_logpz.append(tmp_delta_log_pz)
-            #     sys.stdout.flush()
-            # mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)).to(h[i]))
-            # tmp_log_pz0 = mvn.log_prob(emb_matrix)
-
-            tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
-            l_logpz0.append(tmp_log_pz0)
-
-        # print('CNF Done')
-
-        log_pz0 = torch.stack(l_logpz0).view(-1, self.ntoken)
-        # print('log_pz0 shape', log_pz0.shape)
-        # print('log_pz0 requires_grad =', log_pz0.requires_grad)
-
-        # delta_log_pz = torch.stack(l_delta_logpz).view(-1, self.ntoken)
-        # print('delta_log_pz', delta_log_pz.shape)
-        # print('delta_log_pz requires_grad =', delta_log_pz.requires_grad)
-
+        log_pz0 = self.mvn_log_prob_batched(z0, h).view(-1, self.ntoken)
         log_pz1 = log_pz0 - delta_log_pz
-        # print('log_pz1 shape', log_pz1.shape)
-        # print('log_pz1 requires_grad =', log_pz1.requires_grad)
 
         return log_pz1
 
@@ -208,9 +166,6 @@ class RNNModel(nn.Module):
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
 
-        # print('input shape', input.shape)
-
-        seq_length = input.size(0)
         batch_size = input.size(1)
 
         emb = embedded_dropout(self.encoder, input,
@@ -238,34 +193,26 @@ class RNNModel(nn.Module):
         output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
         outputs.append(output)
 
-        # print('output shape', output.shape)
-
         if self.nhidlast != self.ninp:
             output = self.latent(output)
+
+        ############################################################
+        # Regular LM
+        ############################################################
+        #
+        # logit = self.decoder(output)
+        # prob = nn.functional.softmax(logit, -1)
+        #
+        ############################################################
 
         ############################################################
         # Continuous Normalizing Flows
         ############################################################
 
-        # print('output shape', output.shape)
-
         log_pz1 = self.cnf(output, self.encoder.weight)
-
-        # print('log_pz1 shape', log_pz1.shape)
-        # assert 1 == 0
-        ############################################################
-
-        # logit = self.decoder(output)
-        # prob = nn.functional.softmax(logit, -1)
-        # print('logit shape', logit.shape)
-        # assert 1 == 0
-        #
-        # # transformed = self.ode(logit)
-        # transformed = logit
-
-        # converts the log densities to discrete probabilities
         prob = nn.functional.softmax(log_pz1, -1)
-        # print('prob shape', prob.shape)
+
+        ############################################################
 
         if return_prob:
             model_output = prob
@@ -273,7 +220,6 @@ class RNNModel(nn.Module):
             log_prob = torch.log(torch.add(prob, 1e-8))
             model_output = log_prob
 
-        # model_output = log_pz1
         model_output = model_output.view(-1, batch_size, self.ntoken)
 
         if return_h:
