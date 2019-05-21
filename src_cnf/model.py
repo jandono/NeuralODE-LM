@@ -124,7 +124,7 @@ class RNNModel(nn.Module):
         if nhidlast != ninp:
             self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
 
-        self.decoder = nn.Linear(ninp, ntoken)
+        # self.decoder = nn.Linear(ninp, ntoken)
         self.cnf = CNFBlock(ninp, ntoken)
 
         # Optionally tie weights as in:
@@ -133,10 +133,10 @@ class RNNModel(nn.Module):
         # and
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
-        if tie_weights:
+        # if tie_weights:
             # if nhid != ninp:
             #    raise ValueError('When using the tied flag, nhid must be equal to emsize')
-            self.decoder.weight = self.encoder.weight
+            # self.decoder.weight = self.encoder.weight
 
         self.init_weights()
 
@@ -161,8 +161,8 @@ class RNNModel(nn.Module):
     def init_weights(self):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.fill_(0)
-        self.decoder.weight.data.uniform_(-initrange, initrange)
+        # self.decoder.bias.data.fill_(0)
+        # self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
 
