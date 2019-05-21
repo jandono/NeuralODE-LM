@@ -100,6 +100,8 @@ def logging(s, print_=True, log_=True):
         with open(os.path.join(args.save, 'log.txt'), 'a+') as f_log:
             f_log.write(s + '\n')
 
+    sys.stdout.flush()
+
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
@@ -304,8 +306,6 @@ try:
                 #optimizer.param_groups[0]['lr'] /= 2.
             best_val_loss.append(val_loss)
 
-        # ADDED BY JOVAN, FLUSHING IS NEEDED WHEN RUNNING EXPERIMENTS ON LEONHARD
-        sys.stdout.flush()
 
 except KeyboardInterrupt:
     logging('-' * 89)
