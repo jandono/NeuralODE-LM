@@ -1,3 +1,4 @@
+import sys
 import math
 import torch
 import torch.nn as nn
@@ -104,7 +105,7 @@ class CNFBlock(nn.Module):
                 print('{}'.format(j))
                 _, tmp_delta_log_pz = self.cnf(emb_matrix[j*mb: (j+1)*mb], zeros[j*mb: (j+1)*mb])
                 l_delta_logpz.append(tmp_delta_log_pz)
-
+                sys.stdout.flush()
             # mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)).to(h[i]))
             # tmp_log_pz0 = mvn.log_prob(emb_matrix)
 
