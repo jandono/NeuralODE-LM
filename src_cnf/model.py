@@ -101,12 +101,12 @@ class CNFBlock(nn.Module):
         _, delta_log_pz = self.cnf(z0, zeros)
         delta_log_pz = delta_log_pz.view(-1, self.ntoken)
 
-        log_pz0 = self.mvn_log_prob_batched(z0, h)
+        # log_pz0 = self.mvn_log_prob_batched(z0, h)
 
         # print('delta_log_pz shape', delta_log_pz.shape)
         # l_delta_logpz.append(tmp_delta_log_pz)
 
-        # for i in range(seq_length * batch_size):
+        for i in range(seq_length * batch_size):
 
             # print('{} | {}'.format(i, seq_length*batch_size))
 
@@ -124,12 +124,12 @@ class CNFBlock(nn.Module):
             # mvn = MultivariateNormal(h[i], torch.eye(h[i].size(0)).to(h[i]))
             # tmp_log_pz0 = mvn.log_prob(emb_matrix)
 
-            # tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
-            # l_logpz0.append(tmp_log_pz0)
+            tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
+            l_logpz0.append(tmp_log_pz0)
 
         # print('CNF Done')
 
-        # log_pz0 = torch.stack(l_logpz0).view(-1, self.ntoken)
+        log_pz0 = torch.stack(l_logpz0).view(-1, self.ntoken)
         # print('log_pz0 shape', log_pz0.shape)
         # print('log_pz0 requires_grad =', log_pz0.requires_grad)
 
