@@ -9,8 +9,6 @@ from locked_dropout import LockedDropout
 from weight_drop import WeightDrop
 
 import layers
-from layers.diffeq_layers import ConcatLinear
-from torch.distributions import MultivariateNormal
 
 
 class MVNLogProb(nn.Module):
@@ -40,30 +38,20 @@ class MVNLogProbBatched(nn.Module):
         return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - k/2 * math.log(2 * math.pi)
 
 
-class ODEnet(nn.Module):
-
-    def __init__(self, dim):
-        super(ODEnet, self).__init__()
-        self.cc_linear = ConcatLinear(dim, dim)
-        self.relu = nn.ReLU()
-        # self.nfe = 0
-
-    def forward(self, t, x):
-        # For simple cases time can be omitted.
-        # However, for CNF they mention that they use a Hypernetwork or Concatenation
-        # self.nfe += 1
-        out = self.cc_linear(t, x)
-        out = self.relu(out)
-        return out
-
-
 class CNFBlock(nn.Module):
 
     def __init__(self, ninp, ntoken):
         super(CNFBlock, self).__init__()
 
-        def build_cnf(ninp):
-            diffeq = ODEnet(ninp)
+        def build_cnf():
+            diffeq = layers.ODEnet(
+                hidden_dims=(ninp,),
+                input_shape=(ninp,),
+                strides=None,
+                conv=False,
+                layer_type='concat',
+                nonlinearity='softplus'
+            )
             odefunc = layers.ODEfunc(
                 diffeq=diffeq,
                 # divergence_fn=args.divergence_fn,
@@ -83,7 +71,7 @@ class CNFBlock(nn.Module):
         self.ntoken = ntoken
         # self.mvn_log_prob = MVNLogProb()
         self.mvn_log_prob_batched = MVNLogProbBatched(self.ntoken)
-        self.cnf = build_cnf(ninp)
+        self.cnf = build_cnf()
 
     def forward(self, h, emb_matrix):
 
