@@ -94,7 +94,7 @@ class CNFBlock(nn.Module):
         l_delta_log_pz = []
         l_log_pz0 = []
         for i in range(seq_length * batch_size):
-            print(i)
+            print('{} | {}'.format(i, seq_length * batch_size))
             z0 = emb_matrix
             zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
 
