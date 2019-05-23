@@ -1,3 +1,4 @@
+import sys
 import math
 import torch
 import torch.nn as nn
@@ -69,7 +70,7 @@ class CNFBlock(nn.Module):
 
         self.ninp = ninp
         self.ntoken = ntoken
-        # self.mvn_log_prob = MVNLogProb()
+        self.mvn_log_prob = MVNLogProb()
         self.mvn_log_prob_batched = MVNLogProbBatched(self.ntoken)
         self.cnf = build_cnf()
 
@@ -78,13 +79,34 @@ class CNFBlock(nn.Module):
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
 
-        z0 = emb_matrix.repeat(seq_length * batch_size, 1)
-        zeros = torch.zeros(seq_length * batch_size * self.ntoken, 1).to(emb_matrix)
+        # z0 = emb_matrix.repeat(seq_length * batch_size, 1)
+        # print('shape of z0 ', z0.shape)
+        # print('size of z0 ', z0.element_size() * z0.nelement())
+        #
+        # zeros = torch.zeros(seq_length * batch_size * self.ntoken, 1).to(emb_matrix)
+        # print('shape of zeros ', zeros.shape)
+        # print('size of zeros ', zeros.element_size() * zeros.nelement())
+        # _, delta_log_pz = self.cnf(z0, zeros)
+        # delta_log_pz = delta_log_pz.view(-1, self.ntoken)
+        #
+        # log_pz0 = self.mvn_log_prob_batched(z0, h).view(-1, self.ntoken)
 
-        _, delta_log_pz = self.cnf(z0, zeros)
-        delta_log_pz = delta_log_pz.view(-1, self.ntoken)
+        l_delta_log_pz = []
+        l_log_pz0 = []
+        for i in range(seq_length * batch_size):
+            print(i)
+            z0 = emb_matrix
+            zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
 
-        log_pz0 = self.mvn_log_prob_batched(z0, h).view(-1, self.ntoken)
+            _, tmp_delta_log_pz = self.cnf(z0, zeros)
+            l_delta_log_pz.append(tmp_delta_log_pz)
+
+            tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
+            l_log_pz0.append(tmp_log_pz0)
+
+        delta_log_pz = torch.stack(l_delta_log_pz).view(-1, self.ntoken)
+        log_pz0 = torch.stack(l_log_pz0).view(-1, self.ntoken)
+
         log_pz1 = log_pz0 - delta_log_pz
 
         return log_pz1
