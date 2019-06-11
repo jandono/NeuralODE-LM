@@ -201,8 +201,8 @@ def train():
         start, end, s_id = 0, args.small_batch_size, 0
         while start < args.batch_size:
             cur_data, cur_targets = data[:, start: end], targets[:, start: end].contiguous().view(-1)
-            importance_sampling_targets = negative_targets(cur_targets, ntokens, 10)
-            importance_sampling_ground_truth = torch.ones(cur_targets.size(0), dtype=torch.long)
+            importance_sampling_targets = negative_targets(cur_targets, ntokens, 10).to(cur_targets)
+            importance_sampling_ground_truth = torch.ones(cur_targets.size(0), dtype=torch.long).to(cur_targets)
             # print('cur_targets type', cur_targets.type())
             # print('importance_sampling_targets type', importance_sampling_targets.type())
             # assert 1 == 0
