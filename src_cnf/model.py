@@ -18,25 +18,24 @@ class MVNLogProb(nn.Module):
         super(MVNLogProb, self).__init__()
 
     def forward(self, x, mu):
-        batch = x.shape[0]
-        k = x.shape[1]
-        diff = (x - mu).view(batch, 1, k)
-        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - k/2 * math.log(2 * math.pi)
+        batch_size = x.shape[0]
+        emb_size = x.shape[1]
+        diff = (x - mu).view(batch_size, 1, emb_size)
+        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - emb_size/2 * math.log(2 * math.pi)
 
 
 class MVNLogProbBatched(nn.Module):
 
-    def __init__(self, ntoken):
+    def __init__(self):
         super(MVNLogProbBatched, self).__init__()
-        self.ntoken = ntoken
 
-    def forward(self, x, mu):
-        batch = x.shape[0]
-        k = x.shape[1]
-        mu = mu.repeat(1, self.ntoken).view(-1, k)
+    def forward(self, x, mu, ntoken):
+        batch_size = x.shape[0]
+        emb_size = x.shape[1]
+        mu = mu.repeat(1, ntoken).view(-1, emb_size)
 
-        diff = (x - mu).view(batch, 1, k)
-        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - k/2 * math.log(2 * math.pi)
+        diff = (x - mu).view(batch_size, 1, emb_size)
+        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - emb_size/2 * math.log(2 * math.pi)
 
 
 class CNFBlock(nn.Module):
@@ -71,18 +70,17 @@ class CNFBlock(nn.Module):
         self.ninp = ninp
         self.ntoken = ntoken
         self.mvn_log_prob = MVNLogProb()
-        self.mvn_log_prob_batched = MVNLogProbBatched(self.ntoken)
+        self.mvn_log_prob_batched = MVNLogProbBatched()
         self.cnf = build_cnf()
 
-    def forward(self, h, emb_matrix):
+    def forward(self, h, emb_matrix, sampled_targets):
 
+        num_sampled = sampled_targets.size(1)
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
 
+        # FULL BATCHED
         # z0 = emb_matrix.repeat(seq_length * batch_size, 1)
-        # print('shape of z0 ', z0.shape)
-        # print('size of z0 ', z0.element_size() * z0.nelement())
-        #
         # zeros = torch.zeros(seq_length * batch_size * self.ntoken, 1).to(emb_matrix)
         # print('shape of zeros ', zeros.shape)
         # print('size of zeros ', zeros.element_size() * zeros.nelement())
@@ -91,23 +89,40 @@ class CNFBlock(nn.Module):
         #
         # log_pz0 = self.mvn_log_prob_batched(z0, h).view(-1, self.ntoken)
 
-        l_delta_log_pz = []
-        l_log_pz0 = []
-        for i in range(seq_length * batch_size):
-            print('{} | {}'.format(i, seq_length * batch_size))
-            sys.stdout.flush()
 
-            z0 = emb_matrix
-            zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
+        # SAMPLED
+        l_z0 = [emb_matrix[targets] for targets in sampled_targets]
+        z0 = torch.stack(l_z0).view(-1, emb_size)
+        zeros = torch.zeros(seq_length * batch_size * num_sampled, 1).to(z0)
 
-            _, tmp_delta_log_pz = self.cnf(z0, zeros)
-            l_delta_log_pz.append(tmp_delta_log_pz)
+        _, delta_log_pz = self.cnf(z0, zeros)
+        delta_log_pz = delta_log_pz.view(-1, num_sampled)
 
-            tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
-            l_log_pz0.append(tmp_log_pz0)
+        log_pz0 = self.mvn_log_prob_batched(z0, h, num_sampled).view(-1, num_sampled)
 
-        delta_log_pz = torch.stack(l_delta_log_pz).view(-1, self.ntoken)
-        log_pz0 = torch.stack(l_log_pz0).view(-1, self.ntoken)
+        print('shape of z0 ', z0.shape)
+        print('size of z0 ', z0.element_size() * z0.nelement())
+        print('zeros shape', zeros.shape)
+        print('delta_log_pz shape', delta_log_pz.shape)
+        print('log_pz0 shape', log_pz0.shape)
+
+        # l_delta_log_pz = []
+        # l_log_pz0 = []
+        # for i in range(seq_length * batch_size):
+        #     print('{} | {}'.format(i, seq_length * batch_size))
+        #     sys.stdout.flush()
+        #
+        #     z0 = emb_matrix
+        #     zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
+        #
+        #     _, tmp_delta_log_pz = self.cnf(z0, zeros)
+        #     l_delta_log_pz.append(tmp_delta_log_pz)
+        #
+        #     tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
+        #     l_log_pz0.append(tmp_log_pz0)
+        #
+        # delta_log_pz = torch.stack(l_delta_log_pz).view(-1, self.ntoken)
+        # log_pz0 = torch.stack(l_log_pz0).view(-1, self.ntoken)
 
         log_pz1 = log_pz0 - delta_log_pz
 
@@ -176,7 +191,7 @@ class RNNModel(nn.Module):
         # self.decoder.bias.data.fill_(0)
         # self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, hidden, return_h=False, return_prob=False):
+    def forward(self, input, hidden, return_h=False, return_prob=False, sampled_targets=None):
 
         batch_size = input.size(1)
 
@@ -221,7 +236,7 @@ class RNNModel(nn.Module):
         # Continuous Normalizing Flows
         ############################################################
 
-        log_pz1 = self.cnf(output, self.encoder.weight)
+        log_pz1 = self.cnf(output, self.encoder.weight, sampled_targets)
         prob = nn.functional.softmax(log_pz1, -1)
 
         ############################################################
@@ -232,7 +247,9 @@ class RNNModel(nn.Module):
             log_prob = torch.log(torch.add(prob, 1e-8))
             model_output = log_prob
 
-        model_output = model_output.view(-1, batch_size, self.ntoken)
+        # FULL SOFTMAX
+        # model_output = model_output.view(-1, batch_size, self.ntoken)
+        model_output = model_output.view(-1, batch_size, sampled_targets.size(1))
 
         if return_h:
             return model_output, hidden, raw_outputs, outputs

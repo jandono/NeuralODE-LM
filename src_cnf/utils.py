@@ -1,7 +1,9 @@
 import os
 import shutil
 import torch
+
 from torch.autograd import Variable
+import numpy as np
 
 
 def repackage_hidden(h):
@@ -52,3 +54,18 @@ def save_checkpoint(model, optimizer, path, finetune=False):
     else:
         torch.save(model, os.path.join(path, 'model.pt'))
         torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
+
+
+def negative_targets(true_targets, ntokens, k):
+
+    new_targets = []
+    possible_targets = list(range(ntokens))
+    for target in true_targets:
+        probs = [1/(ntokens-1)] * ntokens
+        probs[target] = 0
+
+        new_t = [target]
+        new_t.extend(np.random.choice(a=possible_targets, size=k, p=probs))
+        new_targets.append(new_t)
+
+    return torch.from_numpy(np.array(new_targets, dtype=np.int_))

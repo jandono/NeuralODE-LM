@@ -14,7 +14,7 @@ import gc
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
+from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint, negative_targets
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./penn/',
@@ -201,13 +201,34 @@ def train():
         start, end, s_id = 0, args.small_batch_size, 0
         while start < args.batch_size:
             cur_data, cur_targets = data[:, start: end], targets[:, start: end].contiguous().view(-1)
+            importance_sampling_targets = negative_targets(cur_targets, ntokens, 10)
+            importance_sampling_ground_truth = torch.ones(cur_targets.size(0), dtype=torch.long)
+            # print('cur_targets type', cur_targets.type())
+            # print('importance_sampling_targets type', importance_sampling_targets.type())
+            # assert 1 == 0
+            # print(cur_data.shape)
+            # print(cur_targets.shape)
+            # print(cur_targets)
+            #
+            # print(importance_sampling_targets)
+            # print(importance_sampling_targets.shape)
+            # assert 1 == 0
 
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
-            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
-            raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
+            # FULL SOFTMAX
+            # log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
+            # raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
+
+            # SAMPLED SOFTMAX
+            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(
+                cur_data, hidden[s_id], return_h=True, sampled_targets=importance_sampling_targets
+            )
+            raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), importance_sampling_ground_truth)
+
+            # assert 1 == 0
 
             loss = raw_loss
             # Activiation Regularization
