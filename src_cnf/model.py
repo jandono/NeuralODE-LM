@@ -100,11 +100,11 @@ class CNFBlock(nn.Module):
 
         log_pz0 = self.mvn_log_prob_batched(z0, h, num_sampled).view(-1, num_sampled)
 
-        print('shape of z0 ', z0.shape)
-        print('size of z0 ', z0.element_size() * z0.nelement())
-        print('zeros shape', zeros.shape)
-        print('delta_log_pz shape', delta_log_pz.shape)
-        print('log_pz0 shape', log_pz0.shape)
+        # print('shape of z0 ', z0.shape)
+        # print('size of z0 ', z0.element_size() * z0.nelement())
+        # print('zeros shape', zeros.shape)
+        # print('delta_log_pz shape', delta_log_pz.shape)
+        # print('log_pz0 shape', log_pz0.shape)
 
         # l_delta_log_pz = []
         # l_log_pz0 = []
