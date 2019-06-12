@@ -75,7 +75,6 @@ class CNFBlock(nn.Module):
 
     def forward(self, h, emb_matrix, sampled_targets):
 
-        num_sampled = sampled_targets.size(1)
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
 
@@ -92,6 +91,7 @@ class CNFBlock(nn.Module):
 
         else:
             # SAMPLED SOFTMAX
+            num_sampled = sampled_targets.size(1)
             l_z0 = [emb_matrix[targets] for targets in sampled_targets]
             z0 = torch.stack(l_z0).view(-1, emb_size)
             zeros = torch.zeros(seq_length * batch_size * num_sampled, 1).to(z0)
