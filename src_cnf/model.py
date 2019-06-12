@@ -79,26 +79,27 @@ class CNFBlock(nn.Module):
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
 
-        # FULL BATCHED
-        # z0 = emb_matrix.repeat(seq_length * batch_size, 1)
-        # zeros = torch.zeros(seq_length * batch_size * self.ntoken, 1).to(emb_matrix)
-        # print('shape of zeros ', zeros.shape)
-        # print('size of zeros ', zeros.element_size() * zeros.nelement())
-        # _, delta_log_pz = self.cnf(z0, zeros)
-        # delta_log_pz = delta_log_pz.view(-1, self.ntoken)
-        #
-        # log_pz0 = self.mvn_log_prob_batched(z0, h).view(-1, self.ntoken)
+        if sampled_targets is None:
+            # FULL SOFTMAX
+            z0 = emb_matrix.repeat(seq_length * batch_size, 1)
+            zeros = torch.zeros(seq_length * batch_size * self.ntoken, 1).to(emb_matrix)
+            # print('shape of zeros ', zeros.shape)
+            # print('size of zeros ', zeros.element_size() * zeros.nelement())
+            _, delta_log_pz = self.cnf(z0, zeros)
+            delta_log_pz = delta_log_pz.view(-1, self.ntoken)
 
+            log_pz0 = self.mvn_log_prob_batched(z0, h).view(-1, self.ntoken)
 
-        # SAMPLED
-        l_z0 = [emb_matrix[targets] for targets in sampled_targets]
-        z0 = torch.stack(l_z0).view(-1, emb_size)
-        zeros = torch.zeros(seq_length * batch_size * num_sampled, 1).to(z0)
+        else:
+            # SAMPLED SOFTMAX
+            l_z0 = [emb_matrix[targets] for targets in sampled_targets]
+            z0 = torch.stack(l_z0).view(-1, emb_size)
+            zeros = torch.zeros(seq_length * batch_size * num_sampled, 1).to(z0)
 
-        _, delta_log_pz = self.cnf(z0, zeros)
-        delta_log_pz = delta_log_pz.view(-1, num_sampled)
+            _, delta_log_pz = self.cnf(z0, zeros)
+            delta_log_pz = delta_log_pz.view(-1, num_sampled)
 
-        log_pz0 = self.mvn_log_prob_batched(z0, h, num_sampled).view(-1, num_sampled)
+            log_pz0 = self.mvn_log_prob_batched(z0, h, num_sampled).view(-1, num_sampled)
 
         # print('shape of z0 ', z0.shape)
         # print('size of z0 ', z0.element_size() * z0.nelement())
