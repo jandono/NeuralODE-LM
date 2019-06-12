@@ -163,6 +163,8 @@ def evaluate(data_source, batch_size=10):
     hidden = model.init_hidden(batch_size)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
+
+            print('{} | {}'.format(i, data_source.size(0) - 1))
             data, targets = get_batch(data_source, i, args)
             targets = targets.view(-1)
 
