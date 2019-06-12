@@ -95,7 +95,7 @@ class CNFBlock(nn.Module):
             l_delta_log_pz = []
             l_log_pz0 = []
             mini_batch = 10
-            for i in range(seq_length * batch_size, mini_batch):
+            for i in range(0, seq_length * batch_size, mini_batch):
                 # print('{} | {}'.format(i, seq_length * batch_size))
                 sys.stdout.flush()
 
