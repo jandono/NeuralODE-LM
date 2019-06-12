@@ -91,12 +91,11 @@ class CNFBlock(nn.Module):
             #
             # log_pz0 = self.mvn_log_prob_batched(z0, h).view(-1, self.ntoken)
 
-
             # FULL SOFTMAX ITERATIVE
             l_delta_log_pz = []
             l_log_pz0 = []
             for i in range(seq_length * batch_size):
-                print('{} | {}'.format(i, seq_length * batch_size))
+                # print('{} | {}'.format(i, seq_length * batch_size))
                 sys.stdout.flush()
 
                 z0 = emb_matrix
@@ -254,9 +253,9 @@ class RNNModel(nn.Module):
 
         # FULL SOFTMAX
         if sampled_targets is None:
-            model_output = model_output.view(-1, batch_size, sampled_targets.size(1))
-        else:
             model_output = model_output.view(-1, batch_size, self.ntoken)
+        else:
+            model_output = model_output.view(-1, batch_size, sampled_targets.size(1))
 
         if return_h:
             return model_output, hidden, raw_outputs, outputs
