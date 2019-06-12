@@ -228,7 +228,9 @@ def train():
             )
             raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), importance_sampling_ground_truth)
 
-            # assert 1 == 0
+            val_loss = evaluate(val_data, eval_batch_size)
+            print('Val loss', val_loss)
+            assert 1 == 0
 
             loss = raw_loss
             # Activiation Regularization
