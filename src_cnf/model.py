@@ -94,17 +94,23 @@ class CNFBlock(nn.Module):
             # FULL SOFTMAX ITERATIVE
             l_delta_log_pz = []
             l_log_pz0 = []
-            for i in range(seq_length * batch_size):
+            mini_batch = 10
+            for i in range(seq_length * batch_size, mini_batch):
                 # print('{} | {}'.format(i, seq_length * batch_size))
                 sys.stdout.flush()
 
-                z0 = emb_matrix
-                zeros = torch.zeros(self.ntoken, 1).to(emb_matrix)
+                # final mini_batch
+                mini_batch = min(mini_batch, seq_length * batch_size - i)
+
+                z0 = emb_matrix.repeat(mini_batch, 1)
+                zeros = torch.zeros(mini_batch * self.ntoken, 1).to(emb_matrix)
 
                 _, tmp_delta_log_pz = self.cnf(z0, zeros)
                 l_delta_log_pz.append(tmp_delta_log_pz)
 
-                tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i])
+                # tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i:i+mini_batch])
+                tmp_log_pz0 = self.mvn_log_prob_batched(z0, h[i:i+mini_batch]).view(-1, self.ntoken)
+
                 l_log_pz0.append(tmp_log_pz0)
 
             delta_log_pz = torch.stack(l_delta_log_pz).view(-1, self.ntoken)
