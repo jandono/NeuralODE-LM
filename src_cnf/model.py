@@ -109,7 +109,7 @@ class CNFBlock(nn.Module):
                 l_delta_log_pz.append(tmp_delta_log_pz)
 
                 # tmp_log_pz0 = self.mvn_log_prob(emb_matrix, h[i:i+mini_batch])
-                tmp_log_pz0 = self.mvn_log_prob_batched(z0, h[i:i+mini_batch]).view(-1, self.ntoken)
+                tmp_log_pz0 = self.mvn_log_prob_batched(z0, h[i:i+mini_batch], self.ntoken).view(-1, self.ntoken)
 
                 l_log_pz0.append(tmp_log_pz0)
 
