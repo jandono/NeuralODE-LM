@@ -56,16 +56,36 @@ def save_checkpoint(model, optimizer, path, finetune=False):
         torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
 
 
+def negative_targets_torch(true_targets, ntokens, k):
+
+    t = torch.ones(true_targets.size(0), ntokens)
+    idx_x = list(range(true_targets.size(0)))
+    t[idx_x, true_targets] = 0
+
+    # for i, target in enumerate(true_targets):
+    #     if i % 1000 == 0:
+    #         print('{} | {}'.format(i, len(true_targets)))
+    #
+    #     t[i, target] = 0
+
+    return torch.cat((true_targets.view(-1, 1), torch.multinomial(t, k).to(true_targets)), dim=1)
+
+
 def negative_targets(true_targets, ntokens, k):
 
     new_targets = []
-    possible_targets = list(range(ntokens))
-    for target in true_targets:
-        probs = [1/(ntokens-1)] * ntokens
-        probs[target] = 0
+    for i, target in enumerate(true_targets[:1000]):
 
-        new_t = [target]
-        new_t.extend(np.random.choice(a=possible_targets, size=k, p=probs))
-        new_targets.append(new_t)
+        if i % 100 == 0:
+            print('{} | {}'.format(i, len(true_targets)))
 
-    return torch.from_numpy(np.array(new_targets, dtype=np.int_))
+        t = torch.ones(1, ntokens)
+        t[0, target] = 0
+
+        noise_targets = torch.multinomial(t, k).to(true_targets).view(-1)
+        # print('Noise targets shape', noise_targets.shape)
+        # print('target shape', target.shape)
+        # assert 1 == 0
+        new_targets.append(torch.cat((target.view(-1), noise_targets)))
+
+    return torch.stack(new_targets)
