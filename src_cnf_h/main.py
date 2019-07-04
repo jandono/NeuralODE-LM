@@ -16,7 +16,7 @@ import gc
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint, negative_targets, negative_targets_torch
+from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint, negative_targets_torch
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./penn/',
@@ -81,11 +81,15 @@ parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
 parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
+parser.add_argument('--noise_dist', type=str, default='uniform',
+                    help='Type of noise distribution (uniform, unigram)')
 parser.add_argument('--sampled_softmax', type=int, default=-1,
                     help='Amount of noise samples for Softmax approximation. If -1 full softmax is used.')
 parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
                     help='Use initial distribution obtained from a decoding layer.')
-
+parser.add_argument('--val_mini', type=int, default=-1,
+                    help='Validation takes a lot of time, \
+                    so specify a value here to perform validation on a subset of specific size.')
 
 args = parser.parse_args()
 
@@ -125,14 +129,13 @@ if torch.cuda.is_available():
 ###############################################################################
 
 corpus = data.Corpus(args.data)
+_, token_freq = zip(*sorted(corpus.dictionary.counter.items()))
+token_freq_tensor = torch.tensor(token_freq, dtype=torch.float)
+token_prob_tensor = token_freq_tensor / torch.sum(token_freq_tensor)
 
 eval_batch_size = 10
 test_batch_size = 1
 train_data = batchify(corpus.train, args.batch_size, args)
-# neg_targets = negative_targets(corpus.train[1:], len(corpus.dictionary), args.noise_samples)
-# neg_targets = batchify(neg_targets, args.batch_size, args)
-# print('neg_targets shape', neg_targets.shape)
-# assert 1 == 0
 val_data = batchify(corpus.valid, eval_batch_size, args)
 test_data = batchify(corpus.test, test_batch_size, args)
 
@@ -154,6 +157,10 @@ if args.cuda:
         parallel_model = model.cuda()
     else:
         parallel_model = nn.DataParallel(model, dim=1).cuda()
+
+    token_freq_tensor = token_freq_tensor.cuda()
+    token_prob_tensor = token_prob_tensor.cuda()
+
 else:
     parallel_model = model
 
@@ -227,11 +234,17 @@ def train():
             if noise_samples != -1:
                 # SAMPLED SOFTMAX
 
-                importance_sampling_targets = negative_targets_torch(cur_targets, ntokens, noise_samples).to(cur_targets)
+                if args.noise_dist == 'uniform':
+                    imp_samp_targets, p_noise = negative_targets_torch(
+                        cur_targets, ntokens, noise_samples) #.to(cur_targets)
+                else:
+                    imp_samp_targets, p_noise = negative_targets_torch(
+                        cur_targets, ntokens, noise_samples, token_prob_tensor) #.to(cur_targets)
+
                 importance_sampling_ground_truth = torch.zeros(cur_targets.size(0), dtype=torch.long).to(cur_targets)
 
                 log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(
-                    cur_data, hidden[s_id], return_h=True, sampled_targets=importance_sampling_targets
+                    cur_data, hidden[s_id], return_h=True, sampled_targets=imp_samp_targets, p_noise=p_noise
                 )
                 raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), importance_sampling_ground_truth)
             else:
@@ -280,7 +293,8 @@ def train():
 lr = args.lr
 best_val_loss = []
 stored_loss = 100000000
-validation_frequency = 20
+stored_loss_mini = 100000000
+val_freq = 20
 # At any point you can hit Ctrl + C to break out of training early.
 try:
     if args.continue_train:
@@ -297,7 +311,7 @@ try:
         epoch_start_time = time.time()
         train()
 
-        if epoch > 0 and epoch % validation_frequency == 0:
+        if epoch > 0 and epoch % val_freq == 0:
             if 't0' in optimizer.param_groups[0]:
                 tmp = {}
                 for prm in model.parameters():
@@ -338,7 +352,19 @@ try:
                     optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
                     #optimizer.param_groups[0]['lr'] /= 2.
                 best_val_loss.append(val_loss)
+        else:
 
+            val_loss_mini = evaluate(val_data[:args.val_mini], eval_batch_size)
+            logging('-' * 89)
+            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss mini {:5.2f} | '
+                    'valid ppl mini {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                                    val_loss_mini, math.exp(val_loss_mini)))
+            logging('-' * 89)
+
+            if val_loss_mini < stored_loss_mini:
+                save_checkpoint(model, optimizer, args.save, append='_mini')
+                logging('Saving Model based on mini eval!')
+                stored_loss_mini = val_loss_mini
 
 except KeyboardInterrupt:
     logging('-' * 89)

@@ -298,9 +298,7 @@ class ODEfunc(nn.Module):
             for s_ in states[3:]:
                 s_.requires_grad_(True)
             dy = self.diffeq(t, y, h, *states[3:])
-            # assert torch.all(torch.eq(h, new_h))
-            # assert 2 == 0
-            # Hack for 2D data to use brute force divergence computation.
+
             if not self.training and dy.view(dy.shape[0], -1).shape[1] == 2:
                 divergence = divergence_bf(dy, y).view(batchsize, 1)
             else:
@@ -309,7 +307,7 @@ class ODEfunc(nn.Module):
             dy = dy - y
             divergence -= torch.ones_like(divergence) * torch.tensor(np.prod(y.shape[1:]), dtype=torch.float32
                                                                      ).to(divergence)
-        return tuple([dy, -divergence, h] + [torch.zeros_like(s_).requires_grad_(True) for s_ in states[3:]])
+        return tuple([dy, -divergence] + [torch.zeros_like(s_).requires_grad_(True) for s_ in states[2:]])
 
 
 class AutoencoderODEfunc(nn.Module):

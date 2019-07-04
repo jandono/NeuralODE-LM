@@ -46,39 +46,31 @@ def create_exp_dir(path, scripts_to_save=None):
             shutil.copyfile(script, dst_file)
 
 
-def save_checkpoint(model, optimizer, path, finetune=False):
+def save_checkpoint(model, optimizer, path, append='', finetune=False):
     if finetune:
-        torch.save(model, os.path.join(path, 'finetune_model.pt'))
+        torch.save(model, os.path.join(path, 'finetune_model' + append + '.pt'))
         torch.save(optimizer.state_dict(), os.path.join(path, 'finetune_optimizer.pt'))
     else:
-        torch.save(model, os.path.join(path, 'model.pt'))
+        torch.save(model, os.path.join(path, 'model' + append + '.pt'))
         torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
 
 
-def negative_targets_torch(true_targets, ntokens, k):
+def negative_targets_torch(true_targets, ntokens, k, probs=None):
 
-    t = torch.ones(true_targets.size(0), ntokens).to(true_targets).to(torch.float)
+    if probs is None:
+        sampling_probs = torch.ones(true_targets.size(0), ntokens).to(true_targets).to(torch.float)
+    else:
+        sampling_probs = probs.repeat(true_targets.size(0), 1)
+
     idx_x = list(range(true_targets.size(0)))
-    t[idx_x, true_targets] = 0
+    sampling_probs[idx_x, true_targets] = 0
 
-    return torch.cat((true_targets.view(-1, 1), torch.multinomial(t, k).to(true_targets)), dim=1)
+    negative_targets = torch.multinomial(sampling_probs, k).to(true_targets)
+    result = torch.cat((true_targets.view(-1, 1), negative_targets), dim=1)
 
+    if probs is not None:
+        p_noise = probs[result]
+    else:
+        p_noise = None
 
-def negative_targets(true_targets, ntokens, k):
-
-    new_targets = []
-    for i, target in enumerate(true_targets[:1000]):
-
-        # if i % 100 == 0:
-        #     print('{} | {}'.format(i, len(true_targets)))
-
-        t = torch.ones(1, ntokens)
-        t[0, target] = 0
-
-        noise_targets = torch.multinomial(t, k).to(true_targets).view(-1)
-        # print('Noise targets shape', noise_targets.shape)
-        # print('target shape', target.shape)
-        # assert 1 == 0
-        new_targets.append(torch.cat((target.view(-1), noise_targets)))
-
-    return torch.stack(new_targets)
+    return result, p_noise

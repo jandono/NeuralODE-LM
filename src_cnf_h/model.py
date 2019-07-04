@@ -38,6 +38,28 @@ class MVNLogProbBatched(nn.Module):
         return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - emb_size/2 * math.log(2 * math.pi)
 
 
+class Swish(nn.Module):
+    """Implementation of Swish: a Self-Gated Activation Function
+        Swish activation is simply f(x)=x⋅sigmoid(x)
+        Paper: https://arxiv.org/abs/1710.05941
+    Shape:
+        - Input: :math:`(N, *)` where `*` means, any number of additional
+          dimensions
+        - Output: :math:`(N, *)`, same shape as the input
+    Examples::
+        >>> m = nn.Swish()
+        >>> input = autograd.Variable(torch.randn(2))
+        >>> print(input)
+        >>> print(m(input))
+    """
+
+    def forward(self, x):
+        return input * torch.sigmoid(x)
+
+    def __repr__(self):
+        return self.__class__.__name__ + ' ()'
+
+
 class ODEnet(nn.Module):
 
     def __init__(self, dim):
@@ -46,6 +68,7 @@ class ODEnet(nn.Module):
         self.linear_h = layers.diffeq_layers.ConcatLinear(dim, dim)
         self.linear = nn.Linear(dim, dim)
         self.soft_relu = nn.Softplus()
+        # self.swish = Swish()
 
     def forward(self, t, x, h):
         # For simple cases time can be omitted.
@@ -236,7 +259,7 @@ class RNNModel(nn.Module):
         # self.decoder.bias.data.fill_(0)
         # self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, hidden, return_h=False, return_prob=False, sampled_targets=None):
+    def forward(self, input, hidden, return_h=False, return_prob=False, sampled_targets=None, p_noise=None):
 
         batch_size = input.size(1)
 
@@ -287,6 +310,11 @@ class RNNModel(nn.Module):
             log_pz0 = None
 
         log_pz1 = self.cnf(output, self.encoder.weight, sampled_targets, log_pz0)
+
+        # Subtract the noise logits from the model logits
+        if p_noise is not None:
+            log_pz1 -= torch.log(torch.add(p_noise, 1e-8))
+
         # print('log_pz1 shape', log_pz1.shape)
         prob = nn.functional.softmax(log_pz1, -1)
 
