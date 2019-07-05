@@ -104,6 +104,7 @@ def logging(s, print_=True, log_=True):
         with open(os.path.join(args.save, 'log.txt'), 'a+') as f_log:
             f_log.write(s + '\n')
 
+    sys.stdout.flush()
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
@@ -312,9 +313,6 @@ try:
                 optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
                 #optimizer.param_groups[0]['lr'] /= 2.
             best_val_loss.append(val_loss)
-
-        # ADDED BY JOVAN, FLUSHING IS NEEDED WHEN RUNNING EXPERIMENTS ON LEONHARD
-        sys.stdout.flush()
 
 except KeyboardInterrupt:
     logging('-' * 89)
