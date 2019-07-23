@@ -1,0 +1,82 @@
+Sender: LSF System <lsfadmin@lo-s4-008>
+Subject: Job 2542131: <python main.py --data ../data/penn --dropouti 0.4 --dropoutl 0.29 --dropouth 0.225 --seed 28 --batch_size 12 --lr 20 --epoch 1000 --nhid 960 --nhidlast 280 --emsize 280 --save PTB-LR_20-DECODER_LOGPZ0-TRANSFER-FREEZE --single_gpu --log-interval 2 --decoder_log_pz0> in cluster <leonhard> Exited
+
+Job <python main.py --data ../data/penn --dropouti 0.4 --dropoutl 0.29 --dropouth 0.225 --seed 28 --batch_size 12 --lr 20 --epoch 1000 --nhid 960 --nhidlast 280 --emsize 280 --save PTB-LR_20-DECODER_LOGPZ0-TRANSFER-FREEZE --single_gpu --log-interval 2 --decoder_log_pz0> was submitted from host <lo-login-01> by user <andonovj> in cluster <leonhard> at Tue Jul 23 16:13:23 2019
+Job was executed on host(s) <lo-s4-008>, in queue <gpu.120h>, as user <andonovj> in cluster <leonhard> at Tue Jul 23 16:13:48 2019
+</cluster/home/andonovj> was used as the home directory.
+</cluster/home/andonovj/NeuralODE-LM/src_cnf> was used as the working directory.
+Started at Tue Jul 23 16:13:48 2019
+Terminated at Tue Jul 23 16:14:05 2019
+Results reported at Tue Jul 23 16:14:05 2019
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+python main.py --data ../data/penn --dropouti 0.4 --dropoutl 0.29 --dropouth 0.225 --seed 28 --batch_size 12 --lr 20 --epoch 1000 --nhid 960 --nhidlast 280 --emsize 280 --save PTB-LR_20-DECODER_LOGPZ0-TRANSFER-FREEZE --single_gpu --log-interval 2 --decoder_log_pz0
+------------------------------------------------------------
+
+Exited with exit code 1.
+
+Resource usage summary:
+
+    CPU time :                                   14.68 sec.
+    Max Memory :                                 2209 MB
+    Average Memory :                             205.00 MB
+    Total Requested Memory :                     16000.00 MB
+    Delta Memory :                               13791.00 MB
+    Max Swap :                                   -
+    Max Processes :                              3
+    Max Threads :                                5
+    Run time :                                   30 sec.
+    Turnaround time :                            42 sec.
+
+The output (if any) follows:
+
+Experiment dir : PTB-LR_20-DECODER_LOGPZ0-TRANSFER-FREEZE-20190723-161351
+torch.Size([77465, 12])
+torch.Size([7376, 10])
+torch.Size([82430, 1])
+Applying weight drop of 0.5 to weight_hh_l0
+Applying weight drop of 0.5 to weight_hh_l0
+Applying weight drop of 0.5 to weight_hh_l0
+param size: 16508440
+Args: Namespace(alpha=2, batch_size=12, beta=1, bptt=70, clip=0.25, continue_train=False, cuda=True, data='../data/penn', decoder_log_pz0=False, dropout=0.4, dropoute=0.1, dropouth=0.225, dropouti=0.4, dropoutl=0.29, emsize=280, epochs=1000, freeze=False, log_interval=2, lr=20.0, max_seq_len_delta=40, model='LSTM', nhid=960, nhidlast=280, nlayers=3, nonmono=5, save='PTB-LR_20-DECODER_LOGPZ0-TRANSFER-FREEZE-20190723-161351', seed=28, single_gpu=True, small_batch_size=12, tied=True, transfer=None, wdecay=1.2e-06, wdrop=0.5)
+/cluster/home/andonovj/miniconda3/envs/NeuralODE-LM-0.4/lib/python3.7/site-packages/torch/nn/modules/module.py:477: UserWarning: RNN module weights are not part of single contiguous chunk of memory. This means they need to be compacted at every call, possibly greatly increasing memory usage. To compact weights again call flatten_parameters().
+  result = self.forward(*input, **kwargs)
+Traceback (most recent call last):
+  File "main.py", line 305, in <module>
+    train()
+  File "main.py", line 247, in train
+    log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
+  File "/cluster/home/andonovj/miniconda3/envs/NeuralODE-LM-0.4/lib/python3.7/site-packages/torch/nn/modules/module.py", line 477, in __call__
+    result = self.forward(*input, **kwargs)
+  File "/cluster/home/andonovj/NeuralODE-LM/src_cnf/model.py", line 248, in forward
+    log_pz1 = self.cnf(output, self.encoder.weight, log_pz0)
+  File "/cluster/home/andonovj/miniconda3/envs/NeuralODE-LM-0.4/lib/python3.7/site-packages/torch/nn/modules/module.py", line 477, in __call__
+    result = self.forward(*input, **kwargs)
+  File "/cluster/home/andonovj/NeuralODE-LM/src_cnf/model.py", line 115, in forward
+    z1, delta_log_pz = self.cnf(z0, zeros)
+  File "/cluster/home/andonovj/miniconda3/envs/NeuralODE-LM-0.4/lib/python3.7/site-packages/torch/nn/modules/module.py", line 477, in __call__
+    result = self.forward(*input, **kwargs)
+  File "/cluster/home/andonovj/NeuralODE-LM/src_cnf/layers/cnf.py", line 60, in forward
+    options=self.solver_options,
+  File "/cluster/home/andonovj/NeuralODE-LM/torchdiffeq-master/torchdiffeq/_impl/adjoint.py", line 129, in odeint_adjoint
+    ys = OdeintAdjointMethod.apply(*y0, func, t, flat_params, rtol, atol, method, options)
+  File "/cluster/home/andonovj/NeuralODE-LM/torchdiffeq-master/torchdiffeq/_impl/adjoint.py", line 18, in forward
+    ans = odeint(func, y0, t, rtol=rtol, atol=atol, method=method, options=options)
+  File "/cluster/home/andonovj/NeuralODE-LM/torchdiffeq-master/torchdiffeq/_impl/odeint.py", line 72, in odeint
+    solution = solver.integrate(t)
+  File "/cluster/home/andonovj/NeuralODE-LM/torchdiffeq-master/torchdiffeq/_impl/solvers.py", line 91, in integrate
+    dy = self.step_func(self.func, t0, t1 - t0, y0)
+  File "/cluster/home/andonovj/NeuralODE-LM/torchdiffeq-master/torchdiffeq/_impl/fixed_grid.py", line 29, in step_func
+    return rk_common.rk4_alt_step_func(func, t, dt, y)
+  File "/cluster/home/andonovj/NeuralODE-LM/torchdiffeq-master/torchdiffeq/_impl/rk_common.py", line 77, in rk4_alt_step_func
+    k4 = func(t + dt, tuple(y_ + dt * (k1_ - k2_ + k3_) for y_, k1_, k2_, k3_ in zip(y, k1, k2, k3)))
+  File "/cluster/home/andonovj/miniconda3/envs/NeuralODE-LM-0.4/lib/python3.7/site-packages/torch/nn/modules/module.py", line 477, in __call__
+    result = self.forward(*input, **kwargs)
+  File "/cluster/home/andonovj/NeuralODE-LM/src_cnf/layers/odefunc.py", line 304, in forward
+    divergence = self.divergence_fn(dy, y, e=self._e).view(batchsize, 1)
+  File "/cluster/home/andonovj/NeuralODE-LM/src_cnf/layers/odefunc.py", line 16, in divergence_bf
+    sum_diag += torch.autograd.grad(dx[:, i].sum(), y, create_graph=True)[0].contiguous()[:, i].contiguous()
+RuntimeError: CUDA error: out of memory

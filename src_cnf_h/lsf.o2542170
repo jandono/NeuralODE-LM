@@ -1,0 +1,48 @@
+Sender: LSF System <lsfadmin@lo-s4-030>
+Subject: Job 2542170: <python main.py --data ../data/penn --dropouti 0.4 --dropoutl 0.29 --dropouth 0.225 --seed 28 --batch_size 12 --lr 0.1 --epoch 1000 --nhid 960 --nhidlast 280 --emsize 280 --save PTB-LR_01-SAMPLED_20-NOISEDIST_UNIGRAM-DECODER_LOGPZ0_TRANSFER --single_gpu --log-interval 200 --sampled_softmax 20 --noise_dist unigram --decoder_log_pz0 --val_mini 400 --transfer ../PTB-AWD_LSTM-20190705-115521/model.pt> in cluster <leonhard> Exited
+
+Job <python main.py --data ../data/penn --dropouti 0.4 --dropoutl 0.29 --dropouth 0.225 --seed 28 --batch_size 12 --lr 0.1 --epoch 1000 --nhid 960 --nhidlast 280 --emsize 280 --save PTB-LR_01-SAMPLED_20-NOISEDIST_UNIGRAM-DECODER_LOGPZ0_TRANSFER --single_gpu --log-interval 200 --sampled_softmax 20 --noise_dist unigram --decoder_log_pz0 --val_mini 400 --transfer ../PTB-AWD_LSTM-20190705-115521/model.pt> was submitted from host <lo-login-01> by user <andonovj> in cluster <leonhard> at Tue Jul 23 16:23:50 2019
+Job was executed on host(s) <lo-s4-030>, in queue <gpu.120h>, as user <andonovj> in cluster <leonhard> at Tue Jul 23 16:23:53 2019
+</cluster/home/andonovj> was used as the home directory.
+</cluster/home/andonovj/NeuralODE-LM/src_cnf_h> was used as the working directory.
+Started at Tue Jul 23 16:23:53 2019
+Terminated at Tue Jul 23 16:23:55 2019
+Results reported at Tue Jul 23 16:23:55 2019
+
+Your job looked like:
+
+------------------------------------------------------------
+# LSBATCH: User input
+python main.py --data ../data/penn --dropouti 0.4 --dropoutl 0.29 --dropouth 0.225 --seed 28 --batch_size 12 --lr 0.1 --epoch 1000 --nhid 960 --nhidlast 280 --emsize 280 --save PTB-LR_01-SAMPLED_20-NOISEDIST_UNIGRAM-DECODER_LOGPZ0_TRANSFER --single_gpu --log-interval 200 --sampled_softmax 20 --noise_dist unigram --decoder_log_pz0 --val_mini 400 --transfer ../PTB-AWD_LSTM-20190705-115521/model.pt
+------------------------------------------------------------
+
+Exited with exit code 2.
+
+Resource usage summary:
+
+    CPU time :                                   0.67 sec.
+    Max Memory :                                 39 MB
+    Average Memory :                             -
+    Total Requested Memory :                     16000.00 MB
+    Delta Memory :                               15961.00 MB
+    Max Swap :                                   -
+    Max Processes :                              -
+    Max Threads :                                -
+    Run time :                                   1 sec.
+    Turnaround time :                            5 sec.
+
+The output (if any) follows:
+
+usage: main.py [-h] [--data DATA] [--model MODEL] [--emsize EMSIZE]
+               [--nhid NHID] [--nhidlast NHIDLAST] [--nlayers NLAYERS]
+               [--lr LR] [--clip CLIP] [--epochs EPOCHS] [--batch_size N]
+               [--bptt BPTT] [--dropout DROPOUT] [--dropouth DROPOUTH]
+               [--dropouti DROPOUTI] [--dropoute DROPOUTE]
+               [--dropoutl DROPOUTL] [--wdrop WDROP] [--tied] [--seed SEED]
+               [--nonmono NONMONO] [--cuda] [--log-interval N] [--save SAVE]
+               [--alpha ALPHA] [--beta BETA] [--wdecay WDECAY]
+               [--continue_train] [--small_batch_size SMALL_BATCH_SIZE]
+               [--max_seq_len_delta MAX_SEQ_LEN_DELTA] [--single_gpu]
+               [--noise_dist NOISE_DIST] [--sampled_softmax SAMPLED_SOFTMAX]
+               [--decoder_log_pz0] [--val_mini VAL_MINI]
+main.py: error: unrecognized arguments: --transfer ../PTB-AWD_LSTM-20190705-115521/model.pt
