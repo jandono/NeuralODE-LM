@@ -46,7 +46,7 @@ class ODEnet(nn.Module):
         self.linear2 = nn.Linear(dim, dim)
         self.soft_relu = nn.Softplus()
 
-        self.init_weights()
+        # self.init_weights()
 
     def forward(self, t, x):
 
