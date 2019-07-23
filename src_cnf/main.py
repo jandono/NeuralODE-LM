@@ -1,5 +1,6 @@
 import argparse
-import os, sys
+import os
+import sys
 import time
 import math
 
@@ -7,7 +8,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 from torch import autograd
 
 import gc
@@ -15,7 +15,7 @@ import gc
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint, negative_targets, negative_targets_torch
+from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./penn/',
@@ -30,10 +30,6 @@ parser.add_argument('--nhidlast', type=int, default=-1,
                     help='number of hidden units for the last rnn layer')
 parser.add_argument('--nlayers', type=int, default=3,
                     help='number of layers')
-parser.add_argument('--same_transform_cnf', default=False, action='store_true',
-                    help='Use a transformation function for the CNF that does not depend on the hidden state.')
-parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
-                    help='Use initial distribution obtained from a decoding layer.')
 parser.add_argument('--lr', type=float, default=30,
                     help='initial learning rate')
 parser.add_argument('--clip', type=float, default=0.25,
@@ -84,10 +80,13 @@ parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
 parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
-parser.add_argument('--sampled_softmax', type=int, default=-1,
-                    help='Amount of noise samples for Softmax approximation. If -1 full softmax is used.')
-
-
+parser.add_argument('--decoder_log_pz0', default=True, action='store_false',
+                    help='Use the logits from the decoder as initial log densities.')
+parser.add_argument('--transfer', type=str, help='Location to a pretrained LM model,\
+                    for weight initialization.')
+parser.add_argument('--freeze', default=False, action='store_true',
+                    help='To be used in conjunction with --transfer, to specify whether\
+                    transferred weights should be freezed.')
 
 args = parser.parse_args()
 
@@ -131,10 +130,6 @@ corpus = data.Corpus(args.data)
 eval_batch_size = 10
 test_batch_size = 1
 train_data = batchify(corpus.train, args.batch_size, args)
-# neg_targets = negative_targets(corpus.train[1:], len(corpus.dictionary), args.noise_samples)
-# neg_targets = batchify(neg_targets, args.batch_size, args)
-# print('neg_targets shape', neg_targets.shape)
-# assert 1 == 0
 val_data = batchify(corpus.valid, eval_batch_size, args)
 test_data = batchify(corpus.test, test_batch_size, args)
 
@@ -146,10 +141,33 @@ ntokens = len(corpus.dictionary)
 if args.continue_train:
     model = torch.load(os.path.join(args.save, 'model.pt'))
 else:
+    if args.freeze:
+        use_dropout = False
+    else:
+        use_dropout = True
+
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
-                           args.same_transform_cnf, args.decoder_log_pz0,
+                           args.decoder_log_pz0,
                            args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-                           args.tied, args.dropoutl)
+                           args.tied, args.dropoutl, use_dropout)
+
+    if args.transfer is not None:
+        copy_model = torch.load(args.transfer, map_location='cpu')
+
+        for name, param in model.named_parameters():
+            if name in copy_model.state_dict():
+                param.data = copy_model.state_dict()[name].data
+
+                if args.freeze:
+                    param.requires_grad = False
+
+        print('Trainable params')
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                print(name)
+            else:
+                assert torch.all(torch.eq(param, copy_model.state_dict()[name]))
+
 
 if args.cuda:
     if args.single_gpu:
@@ -175,7 +193,7 @@ def evaluate(data_source, batch_size=10):
     # print('EVALUATING')
     model.eval()
     total_loss = 0
-    ntokens = len(corpus.dictionary)
+    # ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(batch_size)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
@@ -194,7 +212,6 @@ def evaluate(data_source, batch_size=10):
 
 
 def train():
-    # with autograd.detect_anomaly():
 
     assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
 
@@ -202,10 +219,12 @@ def train():
     total_loss = 0
     start_time = time.time()
     ntokens = len(corpus.dictionary)
-    noise_samples = args.sampled_softmax
     hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
     batch, i = 0, 0
+
+    # with torch.autograd.detect_anomaly():
     while i < train_data.size(0) - 1 - 1:
+
         bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Prevent excessively small or negative sequence lengths
         seq_len = max(5, int(np.random.normal(bptt, 5)))
@@ -216,11 +235,6 @@ def train():
         optimizer.param_groups[0]['lr'] = lr2 * seq_len / args.bptt
         model.train()
         data, targets = get_batch(train_data, i, args, seq_len=seq_len)
-        # importance_sampling_targets = negative_targets(targets.view(-1), ntokens, 10).to(targets)
-        # importance_sampling_ground_truth = torch.zeros(targets.view(-1).size(0), dtype=torch.long).to(targets)
-        # print('importance_sampling_targets shape', importance_sampling_targets.shape)
-        # print('importance_sampling_ground_truth shape', importance_sampling_ground_truth.shape)
-        # assert 1 == 0
         optimizer.zero_grad()
 
         start, end, s_id = 0, args.small_batch_size, 0
@@ -230,23 +244,8 @@ def train():
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
-            if noise_samples != -1:
-                importance_sampling_targets = negative_targets(cur_targets, ntokens, noise_samples).to(cur_targets)
-                importance_sampling_ground_truth = torch.zeros(cur_targets.size(0), dtype=torch.long).to(cur_targets)
-                # print('cur_targets shape', cur_targets.view(-1).shape)
-                # print('importance_sampling_targets shape', importance_sampling_targets.shape)
-                # print('importance_sampling_ground_truth shape', importance_sampling_ground_truth.shape)
-                # assert 1 == 0
-                # SAMPLED SOFTMAX
-                log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(
-                    cur_data, hidden[s_id], return_h=True, sampled_targets=importance_sampling_targets
-                )
-                raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), importance_sampling_ground_truth)
-            else:
-                # FULL SOFTMAX
-                print('FULL SOFTMAX')
-                log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
-                raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
+            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
+            raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
 
             loss = raw_loss
             # Activiation Regularization
@@ -276,7 +275,7 @@ def train():
             logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                              elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
         ###

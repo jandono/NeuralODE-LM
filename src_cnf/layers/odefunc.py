@@ -258,7 +258,6 @@ class ODEfunc(nn.Module):
         super(ODEfunc, self).__init__()
         assert divergence_fn in ("brute_force", "approximate")
 
-        # self.diffeq = diffeq_layers.wrappers.diffeq_wrapper(diffeq)
         self.diffeq = diffeq
         self.residual = residual
         self.rademacher = rademacher

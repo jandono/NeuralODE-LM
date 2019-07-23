@@ -3,7 +3,7 @@ import shutil
 import torch
 
 from torch.autograd import Variable
-import numpy as np
+import tensorboardX
 
 
 def repackage_hidden(h):
@@ -56,36 +56,56 @@ def save_checkpoint(model, optimizer, path, finetune=False):
         torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
 
 
-def negative_targets_torch(true_targets, ntokens, k):
+def add_scalars(dir, logfile, writer):
 
-    t = torch.ones(true_targets.size(0), ntokens)
-    idx_x = list(range(true_targets.size(0)))
-    t[idx_x, true_targets] = 0
+    with open(os.path.join(dir, logfile), 'r') as f:
+        for line in f:
+            parts = line.split('|')
 
-    # for i, target in enumerate(true_targets):
-    #     if i % 1000 == 0:
-    #         print('{} | {}'.format(i, len(true_targets)))
-    #
-    #     t[i, target] = 0
+            if len(parts) < 2 or 'end' not in parts[1]:
+                continue
 
-    return torch.cat((true_targets.view(-1, 1), torch.multinomial(t, k).to(true_targets)), dim=1)
+            step = int(parts[1].strip().split()[-1])
+            loss_parts = parts[-2].strip().split()
+            loss_val = float(loss_parts[-1].strip())
+            ppl_parts = parts[-1].strip().split()
+            ppl_val = float(ppl_parts[-1].strip())
+
+            if 'mini' in parts[-1]:
+                scalar_append = ' mini'
+            else:
+                scalar_append = ''
+            writer.add_scalar('valid loss' + scalar_append, loss_val, step)
+            writer.add_scalar('valid ppl' + scalar_append, ppl_val, step)
 
 
-def negative_targets(true_targets, ntokens, k):
+def add_embeddings(dir, model_file, labels_file, writer):
 
-    new_targets = []
-    for i, target in enumerate(true_targets[:1000]):
+    model = torch.load(os.path.join(dir, model_file), map_location='cpu')
+    labels = []
+    with open(labels_file, 'r') as f:
+        for label in f:
+            labels.append(label.strip())
+    writer.add_embedding(model.encoder.weight, metadata=labels)
 
-        if i % 100 == 0:
-            print('{} | {}'.format(i, len(true_targets)))
 
-        t = torch.ones(1, ntokens)
-        t[0, target] = 0
+def add_histograms(dir, model_file, writer, step=0):
 
-        noise_targets = torch.multinomial(t, k).to(true_targets).view(-1)
-        # print('Noise targets shape', noise_targets.shape)
-        # print('target shape', target.shape)
-        # assert 1 == 0
-        new_targets.append(torch.cat((target.view(-1), noise_targets)))
+    model = torch.load(os.path.join(dir, model_file), map_location='cpu')
+    for name, param in model.named_parameters():
+        writer.add_histogram(name, param, step)
 
-    return torch.stack(new_targets)
+
+def plot_experiments(experiments_dir):
+
+    labels_file = 'labels.txt'
+    for dir in os.listdir(experiments_dir):
+        writing_dir = 'logs/' + dir.split('/')[-1]
+        writer = tensorboardX.SummaryWriter(writing_dir)
+
+        experiment_dir = os.path.join(os.path.realpath(experiments_dir), dir)
+        add_scalars(experiment_dir, 'log.txt', writer)
+        add_embeddings(experiment_dir, 'model_mini.pt', labels_file, writer)
+        add_histograms(experiment_dir, 'model_mini.pt', writer)
+
+        writer.close()
