@@ -91,7 +91,7 @@ class CNFBlock(nn.Module):
                 # T=args.time_length,
                 # train_T=args.train_T,
                 # regularization_fns=None,
-                solver='rk4',
+                # solver='rk4',
             )
             return cnf
 
