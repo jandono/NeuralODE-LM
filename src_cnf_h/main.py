@@ -90,8 +90,14 @@ parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
 parser.add_argument('--val_mini', type=int, default=-1,
                     help='Validation takes a lot of time, \
                     so specify a value here to perform validation on a subset of specific size.')
+parser.add_argument('--transfer', type=str, help='Location to a pretrained LM model,\
+                    for weight initialization.')
+parser.add_argument('--freeze', default=False, action='store_true',
+                    help='To be used in conjunction with --transfer, to specify whether\
+                    transferred weights should be freezed.')
 
 args = parser.parse_args()
+
 
 if args.nhidlast < 0:
     args.nhidlast = args.emsize
@@ -147,10 +153,32 @@ ntokens = len(corpus.dictionary)
 if args.continue_train:
     model = torch.load(os.path.join(args.save, 'model.pt'))
 else:
+    if args.freeze:
+        use_dropout = False
+    else:
+        use_dropout = True
+
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
                            args.decoder_log_pz0,
                            args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-                           args.tied, args.dropoutl)
+                           args.tied, args.dropoutl, use_dropout)
+
+    if args.transfer is not None:
+        copy_model = torch.load(args.transfer, map_location='cpu')
+
+        for name, param in model.named_parameters():
+            if name in copy_model.state_dict():
+                param.data = copy_model.state_dict()[name].data
+
+                if args.freeze:
+                    param.requires_grad = False
+
+        print('Trainable params')
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                print(name)
+            else:
+                assert torch.all(torch.eq(param, copy_model.state_dict()[name]))
 
 if args.cuda:
     if args.single_gpu:
@@ -236,10 +264,10 @@ def train():
 
                 if args.noise_dist == 'uniform':
                     imp_samp_targets, p_noise = negative_targets_torch(
-                        cur_targets, ntokens, noise_samples) #.to(cur_targets)
+                        cur_targets, ntokens, noise_samples)
                 else:
                     imp_samp_targets, p_noise = negative_targets_torch(
-                        cur_targets, ntokens, noise_samples, token_prob_tensor) #.to(cur_targets)
+                        cur_targets, ntokens, noise_samples, token_prob_tensor)
 
                 importance_sampling_ground_truth = torch.zeros(cur_targets.size(0), dtype=torch.long).to(cur_targets)
 

@@ -54,7 +54,7 @@ class Swish(nn.Module):
     """
 
     def forward(self, x):
-        return input * torch.sigmoid(x)
+        return x * torch.sigmoid(x)
 
     def __repr__(self):
         return self.__class__.__name__ + ' ()'
@@ -201,9 +201,10 @@ class RNNModel(nn.Module):
     def __init__(self, rnn_type, ntoken, ninp, nhid, nhidlast, nlayers,
                  decoder_log_pz0,
                  dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0,
-                 tie_weights=False, ldropout=0.5):
+                 tie_weights=False, ldropout=0.5, use_dropout=True):
         super(RNNModel, self).__init__()
-        self.use_dropout = True
+
+        self.use_dropout = use_dropout
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
 
@@ -313,7 +314,7 @@ class RNNModel(nn.Module):
 
         # Subtract the noise logits from the model logits
         if p_noise is not None:
-            log_pz1 -= torch.log(torch.add(p_noise, 1e-8))
+            log_pz1 -= torch.log(p_noise)
 
         # print('log_pz1 shape', log_pz1.shape)
         prob = nn.functional.softmax(log_pz1, -1)
