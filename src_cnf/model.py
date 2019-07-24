@@ -56,10 +56,6 @@ class ODEnet(nn.Module):
 
         return out
 
-    def init_weights(self):
-        nn.init.xavier_normal_(self.linear1._layer.weight)
-        nn.init.xavier_normal(self.linear2.weight)
-
 
 class CNFBlock(nn.Module):
 
@@ -80,7 +76,6 @@ class CNFBlock(nn.Module):
 
             odefunc = layers.ODEfunc(
                 diffeq=diffeq,
-                divergence_fn='brute_force'
                 # divergence_fn=args.divergence_fn,
                 # residual=args.residual,
                 # rademacher=args.rademacher,
@@ -116,6 +111,7 @@ class CNFBlock(nn.Module):
 
         # This can be batched, but as memory is bigger issue this is more optimal
         if log_pz0 is None:
+            print('test')
             for h_i in h:
 
                 if log_pz0 is None:
