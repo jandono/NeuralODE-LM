@@ -38,44 +38,21 @@ class MVNLogProbBatched(nn.Module):
         return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - emb_size/2 * math.log(2 * math.pi)
 
 
-class Swish(nn.Module):
-    """Implementation of Swish: a Self-Gated Activation Function
-        Swish activation is simply f(x)=x⋅sigmoid(x)
-        Paper: https://arxiv.org/abs/1710.05941
-    Shape:
-        - Input: :math:`(N, *)` where `*` means, any number of additional
-          dimensions
-        - Output: :math:`(N, *)`, same shape as the input
-    Examples::
-        >>> m = nn.Swish()
-        >>> input = autograd.Variable(torch.randn(2))
-        >>> print(input)
-        >>> print(m(input))
-    """
-
-    def forward(self, x):
-        return x * torch.sigmoid(x)
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' ()'
-
-
 class ODEnet(nn.Module):
 
     def __init__(self, dim):
         super(ODEnet, self).__init__()
-        self.linear_x = layers.diffeq_layers.ConcatLinear(dim, dim)
-        self.linear_h = layers.diffeq_layers.ConcatLinear(dim, dim)
-        self.linear = nn.Linear(dim, dim)
+        self.linear1 = layers.diffeq_layers.ConcatLinear(dim, dim)
+        self.linear2 = nn.Linear(dim, dim)
         self.soft_relu = nn.Softplus()
-        # self.swish = Swish()
 
-    def forward(self, t, x, h):
-        # For simple cases time can be omitted.
-        # However, for CNF they mention that they use a Hypernetwork or Concatenation
-        out = self.linear_x(t, x) + self.linear_h(t, h)
+        # self.init_weights()
+
+    def forward(self, t, x):
+
+        out = self.linear1(t, x)
         out = self.soft_relu(out)
-        out = self.linear(out)
+        out = self.linear2(out)
 
         return out
 
@@ -86,7 +63,6 @@ class CNFBlock(nn.Module):
         super(CNFBlock, self).__init__()
 
         def build_cnf():
-
             # diffeq = layers.ODEnet(
             #     hidden_dims=(ninp,),
             #     input_shape=(ninp,),
@@ -104,13 +80,13 @@ class CNFBlock(nn.Module):
                 # residual=args.residual,
                 # rademacher=args.rademacher,
             )
+
             cnf = layers.CNF(
                 odefunc=odefunc,
                 # T=args.time_length,
                 # train_T=args.train_T,
                 # regularization_fns=None,
-                # solver=args.solver,
-                # solver='rk4'
+                # solver='rk4',
             )
             return cnf
 
@@ -120,77 +96,31 @@ class CNFBlock(nn.Module):
         self.mvn_log_prob_batched = MVNLogProbBatched()
         self.cnf = build_cnf()
 
-    def forward(self, h, emb_matrix, sampled_targets, log_pz0=None):
+    def forward(self, h, emb_matrix, log_pz0=None):
 
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
 
-        if sampled_targets is None:
-            # FULL SOFTMAX ITERATIVE
-            # ONLY TO BE USED IN EVAL MODE
+        # FULL SOFTMAX SAME TRANSFORMATION BATCHED
+        # When the transformation does not depend on the hidden state only one CNF
+        # can be solved instead of seq_length * batch_size CNFs
 
-            z0 = emb_matrix
-            zeros = torch.zeros(self.ntoken, 1).to(z0)
+        z0 = emb_matrix
+        zeros = torch.zeros(self.ntoken, 1).to(z0)
+        z1, delta_log_pz = self.cnf(z0, zeros)
 
-            l_delta_log_pz = []
-            l_log_pz0 = []
-            for i in range(0, seq_length*batch_size):
-
-                _, tmp_delta_log_pz = self.cnf(z0, h[i].view(1, -1), zeros)
-                tmp_delta_log_pz = tmp_delta_log_pz.view(-1, self.ntoken)
-                l_delta_log_pz.append(tmp_delta_log_pz)
+        # This can be batched, but as memory is bigger issue this is more optimal
+        if log_pz0 is None:
+            print('test')
+            for h_i in h:
 
                 if log_pz0 is None:
-                    tmp_log_pz0 = self.mvn_log_prob(z0, h[i]).view(-1, self.ntoken)
-                    l_log_pz0.append(tmp_log_pz0)
-
-            delta_log_pz = torch.cat(l_delta_log_pz).view(-1, self.ntoken)
-
-            if log_pz0 is None:
-                log_pz0 = torch.cat(l_log_pz0)
-
-            log_pz0 = log_pz0.view(-1, self.ntoken)
-
-        else:
-            # SAMPLED SOFTMAX
-
-            # Check dimensions
-            if log_pz0 is not None:
-                log_pz0 = log_pz0.view(-1, self.ntoken)
-
-            num_sampled = sampled_targets.size(1)
-
-            # Init lists for intermediate results
-            l_z0 = []
-            l_log_pz0 = []
-
-            # Obtain the corresponds z0-s and log_pz0 for every element in the batch
-            for i, targets in enumerate(sampled_targets):
-
-                tmp_z0 = emb_matrix[targets]
-                l_z0.append(tmp_z0)
-
-                # TODO: Is this worth optimizing?
-                if log_pz0 is not None:
-                    # If log_pz0 from the decoder is used, collect only the ones needed
-                    l_log_pz0.append(log_pz0[i, targets])
+                    log_pz0 = self.mvn_log_prob(z0, h_i)
                 else:
-                    # If log_pz0 is not used from the decoder, obtain them from Multivariate Normal
-                    l_log_pz0.append(self.mvn_log_prob(tmp_z0, h[i]).view(-1, num_sampled))
+                    log_pz0 = torch.cat((log_pz0, self.mvn_log_prob(z0, h_i)))
 
-            z0 = torch.stack(l_z0).view(-1, emb_size)
-            log_pz0 = torch.stack(l_log_pz0).view(-1, num_sampled)
-
-            zeros = torch.zeros(seq_length * batch_size * num_sampled, 1).to(z0)
-
-            # Batch h for usage in the CNF
-            cnf_h = h.repeat(1, num_sampled).view(-1, emb_size)
-
-            # RUN THE CNF
-            _, delta_log_pz = self.cnf(z0, cnf_h, zeros)
-            delta_log_pz = delta_log_pz.view(-1, num_sampled)
-
-        log_pz1 = log_pz0 - delta_log_pz
+        log_pz1 = log_pz0.view(-1, 1) - delta_log_pz.repeat(seq_length * batch_size, 1)
+        log_pz1 = log_pz1.view(-1, self.ntoken)
 
         return log_pz1
 
@@ -260,7 +190,7 @@ class RNNModel(nn.Module):
         # self.decoder.bias.data.fill_(0)
         # self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, hidden, return_h=False, return_prob=False, sampled_targets=None, p_noise=None):
+    def forward(self, input, hidden, return_h=False, return_prob=False, sampled_targets=None):
 
         batch_size = input.size(1)
 
@@ -305,17 +235,14 @@ class RNNModel(nn.Module):
         # Continuous Normalizing Flows
         ############################################################
 
-        if self.decoder_log_pz0:
-            log_pz0 = self.decoder(output)
-        else:
-            log_pz0 = None
+        # if self.decoder_log_pz0:
+        #     log_pz0 = self.decoder(output)
+        # else:
+        #     log_pz0 = None
 
-        log_pz1 = self.cnf(output, self.encoder.weight, sampled_targets, log_pz0)
-
-        # Subtract the noise logits from the model logits
-        if p_noise is not None:
-            log_pz1 -= torch.log(p_noise)
-
+        log_pz0 = self.decoder(output)
+        log_pz1 = self.cnf(output, self.encoder.weight, log_pz0)
+        # log_pz1 = log_pz0
         # print('log_pz1 shape', log_pz1.shape)
         prob = nn.functional.softmax(log_pz1, -1)
 

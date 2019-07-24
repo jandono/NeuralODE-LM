@@ -31,7 +31,7 @@ class CNF(nn.Module):
         self.test_rtol = rtol
         self.solver_options = {}
 
-    def forward(self, z, h, logpz=None, integration_times=None, reverse=False):
+    def forward(self, z, logpz=None, integration_times=None, reverse=False):
 
         if logpz is None:
             _logpz = torch.zeros(z.shape[0], 1).to(z)
@@ -52,7 +52,7 @@ class CNF(nn.Module):
         if self.training:
             state_t = odeint(
                 self.odefunc,
-                (z, _logpz, h) + reg_states,
+                (z, _logpz) + reg_states,
                 integration_times.to(z),
                 atol=[self.atol, self.atol] + [1e20] * len(reg_states) if self.solver == 'dopri5' else self.atol,
                 rtol=[self.rtol, self.rtol] + [1e20] * len(reg_states) if self.solver == 'dopri5' else self.rtol,
@@ -62,15 +62,12 @@ class CNF(nn.Module):
         else:
             state_t = odeint(
                 self.odefunc,
-                (z, _logpz, h),
+                (z, _logpz),
                 integration_times.to(z),
                 atol=self.test_atol,
                 rtol=self.test_rtol,
                 method=self.test_solver,
             )
-
-        # assert torch.all(torch.eq(state_t[2], h))
-        # assert 1 == 0
 
         if len(integration_times) == 2:
             state_t = tuple(s[1] for s in state_t)

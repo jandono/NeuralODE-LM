@@ -274,11 +274,10 @@ class ODEfunc(nn.Module):
         self._num_evals.fill_(0)
 
     def forward(self, t, states):
-        assert len(states) >= 3
-
+        assert len(states) >= 2
         y = states[0]
-        h = states[2]
 
+        # increment num evals
         self._num_evals += 1
 
         # convert to tensor
@@ -295,10 +294,10 @@ class ODEfunc(nn.Module):
         with torch.set_grad_enabled(True):
             y.requires_grad_(True)
             t.requires_grad_(True)
-            for s_ in states[3:]:
+            for s_ in states[2:]:
                 s_.requires_grad_(True)
-            dy = self.diffeq(t, y, h, *states[3:])
-
+            dy = self.diffeq(t, y, *states[2:])
+            # Hack for 2D data to use brute force divergence computation.
             if not self.training and dy.view(dy.shape[0], -1).shape[1] == 2:
                 divergence = divergence_bf(dy, y).view(batchsize, 1)
             else:

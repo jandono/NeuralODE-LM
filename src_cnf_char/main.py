@@ -8,7 +8,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.autograd import Variable
 from torch import autograd
 
 import gc
@@ -16,7 +15,7 @@ import gc
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint, negative_targets_torch
+from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./penn/',
@@ -81,15 +80,8 @@ parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
 parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
-parser.add_argument('--noise_dist', type=str, default='uniform',
-                    help='Type of noise distribution (uniform, unigram)')
-parser.add_argument('--sampled_softmax', type=int, default=-1,
-                    help='Amount of noise samples for Softmax approximation. If -1 full softmax is used.')
-parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
-                    help='Use initial distribution obtained from a decoding layer.')
-parser.add_argument('--val_mini', type=int, default=-1,
-                    help='Validation takes a lot of time, \
-                    so specify a value here to perform validation on a subset of specific size.')
+parser.add_argument('--decoder_log_pz0', default=True, action='store_false',
+                    help='Use the logits from the decoder as initial log densities.')
 parser.add_argument('--transfer', type=str, help='Location to a pretrained LM model,\
                     for weight initialization.')
 parser.add_argument('--freeze', default=False, action='store_true',
@@ -97,7 +89,6 @@ parser.add_argument('--freeze', default=False, action='store_true',
                     transferred weights should be freezed.')
 
 args = parser.parse_args()
-
 
 if args.nhidlast < 0:
     args.nhidlast = args.emsize
@@ -135,9 +126,6 @@ if torch.cuda.is_available():
 ###############################################################################
 
 corpus = data.Corpus(args.data)
-_, token_freq = zip(*sorted(corpus.dictionary.counter.items()))
-token_freq_tensor = torch.tensor(token_freq, dtype=torch.float)
-token_prob_tensor = token_freq_tensor / torch.sum(token_freq_tensor)
 
 eval_batch_size = 10
 test_batch_size = 1
@@ -180,15 +168,12 @@ else:
             else:
                 assert torch.all(torch.eq(param, copy_model.state_dict()[name]))
 
+
 if args.cuda:
     if args.single_gpu:
         parallel_model = model.cuda()
     else:
         parallel_model = nn.DataParallel(model, dim=1).cuda()
-
-    token_freq_tensor = token_freq_tensor.cuda()
-    token_prob_tensor = token_prob_tensor.cuda()
-
 else:
     parallel_model = model
 
@@ -205,15 +190,15 @@ criterion = nn.CrossEntropyLoss()
 
 def evaluate(data_source, batch_size=10):
     # Turn on evaluation mode which disables dropout.
-    print('EVALUATING')
+    # print('EVALUATING')
     model.eval()
     total_loss = 0
-    ntokens = len(corpus.dictionary)
+    # ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(batch_size)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
 
-            print('{} | {}'.format(i, data_source.size(0) - 1))
+            # print('{} | {}'.format(i, data_source.size(0) - 1))
             data, targets = get_batch(data_source, i, args)
             targets = targets.view(-1)
 
@@ -228,18 +213,18 @@ def evaluate(data_source, batch_size=10):
 
 def train():
 
-    # with autograd.detect_anomaly():
-
     assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
 
     # Turn on training mode which enables dropout.
     total_loss = 0
     start_time = time.time()
     ntokens = len(corpus.dictionary)
-    noise_samples = args.sampled_softmax
     hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
     batch, i = 0, 0
+
+    # with torch.autograd.detect_anomaly():
     while i < train_data.size(0) - 1 - 1:
+
         bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Prevent excessively small or negative sequence lengths
         seq_len = max(5, int(np.random.normal(bptt, 5)))
@@ -259,26 +244,8 @@ def train():
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
-            if noise_samples != -1:
-                # SAMPLED SOFTMAX
-
-                if args.noise_dist == 'uniform':
-                    imp_samp_targets, p_noise = negative_targets_torch(
-                        cur_targets, ntokens, noise_samples)
-                else:
-                    imp_samp_targets, p_noise = negative_targets_torch(
-                        cur_targets, ntokens, noise_samples, token_prob_tensor)
-
-                importance_sampling_ground_truth = torch.zeros(cur_targets.size(0), dtype=torch.long).to(cur_targets)
-
-                log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(
-                    cur_data, hidden[s_id], return_h=True, sampled_targets=imp_samp_targets, p_noise=p_noise
-                )
-                raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), importance_sampling_ground_truth)
-            else:
-                # FULL SOFTMAX
-                log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
-                raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
+            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
+            raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
 
             loss = raw_loss
             # Activiation Regularization
@@ -288,7 +255,6 @@ def train():
             loss *= args.small_batch_size / args.batch_size
             total_loss += raw_loss.data * args.small_batch_size / args.batch_size
 
-            # loss.backward(retain_graph=True)
             loss.backward()
 
             s_id += 1
@@ -309,7 +275,7 @@ def train():
             logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
-                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                              elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
         ###
@@ -321,8 +287,7 @@ def train():
 lr = args.lr
 best_val_loss = []
 stored_loss = 100000000
-stored_loss_mini = 100000000
-val_freq = 20
+
 # At any point you can hit Ctrl + C to break out of training early.
 try:
     if args.continue_train:
@@ -338,61 +303,47 @@ try:
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train()
+        if 't0' in optimizer.param_groups[0]:
+            tmp = {}
+            for prm in model.parameters():
+                tmp[prm] = prm.data.clone()
+                if 'ax' in optimizer.state[prm]:
+                    prm.data = optimizer.state[prm]['ax'].clone()
 
-        if epoch > 0 and epoch % val_freq == 0:
-            if 't0' in optimizer.param_groups[0]:
-                tmp = {}
-                for prm in model.parameters():
-                    tmp[prm] = prm.data.clone()
-                    if 'ax' in optimizer.state[prm]:
-                        prm.data = optimizer.state[prm]['ax'].clone()
+            val_loss2 = evaluate(val_data)
+            logging('-' * 89)
+            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                               val_loss2, math.exp(val_loss2)))
+            logging('-' * 89)
 
-                val_loss2 = evaluate(val_data)
-                logging('-' * 89)
-                logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                        'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                                   val_loss2, math.exp(val_loss2)))
-                logging('-' * 89)
+            if val_loss2 < stored_loss:
+                save_checkpoint(model, optimizer, args.save)
+                logging('Saving Averaged!')
+                stored_loss = val_loss2
 
-                if val_loss2 < stored_loss:
-                    save_checkpoint(model, optimizer, args.save)
-                    logging('Saving Averaged!')
-                    stored_loss = val_loss2
+            for prm in model.parameters():
+                prm.data = tmp[prm].clone()
 
-                for prm in model.parameters():
-                    prm.data = tmp[prm].clone()
-
-            else:
-                val_loss = evaluate(val_data, eval_batch_size)
-                logging('-' * 89)
-                logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                        'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                                   val_loss, math.exp(val_loss)))
-                logging('-' * 89)
-
-                if val_loss < stored_loss:
-                    save_checkpoint(model, optimizer, args.save)
-                    logging('Saving Normal!')
-                    stored_loss = val_loss
-
-                if 't0' not in optimizer.param_groups[0] and (len(best_val_loss)>args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
-                    logging('Switching!')
-                    optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-                    #optimizer.param_groups[0]['lr'] /= 2.
-                best_val_loss.append(val_loss)
         else:
-
-            val_loss_mini = evaluate(val_data[:args.val_mini], eval_batch_size)
+            val_loss = evaluate(val_data, eval_batch_size)
             logging('-' * 89)
-            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss mini {:5.2f} | '
-                    'valid ppl mini {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                                    val_loss_mini, math.exp(val_loss_mini)))
+            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                               val_loss, math.exp(val_loss)))
             logging('-' * 89)
 
-            if val_loss_mini < stored_loss_mini:
-                save_checkpoint(model, optimizer, args.save, append='_mini')
-                logging('Saving Model based on mini eval!')
-                stored_loss_mini = val_loss_mini
+            if val_loss < stored_loss:
+                save_checkpoint(model, optimizer, args.save)
+                logging('Saving Normal!')
+                stored_loss = val_loss
+
+            if 't0' not in optimizer.param_groups[0] and (len(best_val_loss)>args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
+                logging('Switching!')
+                optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
+                #optimizer.param_groups[0]['lr'] /= 2.
+            best_val_loss.append(val_loss)
+
 
 except KeyboardInterrupt:
     logging('-' * 89)

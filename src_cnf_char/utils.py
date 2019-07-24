@@ -1,7 +1,7 @@
 import os
 import shutil
-
 import torch
+
 from torch.autograd import Variable
 import tensorboardX
 
@@ -47,34 +47,13 @@ def create_exp_dir(path, scripts_to_save=None):
             shutil.copyfile(script, dst_file)
 
 
-def save_checkpoint(model, optimizer, path, append='', finetune=False):
+def save_checkpoint(model, optimizer, path, finetune=False):
     if finetune:
-        torch.save(model, os.path.join(path, 'finetune_model' + append + '.pt'))
+        torch.save(model, os.path.join(path, 'finetune_model.pt'))
         torch.save(optimizer.state_dict(), os.path.join(path, 'finetune_optimizer.pt'))
     else:
-        torch.save(model, os.path.join(path, 'model' + append + '.pt'))
+        torch.save(model, os.path.join(path, 'model.pt'))
         torch.save(optimizer.state_dict(), os.path.join(path, 'optimizer.pt'))
-
-
-def negative_targets_torch(true_targets, ntokens, k, probs=None):
-
-    if probs is None:
-        sampling_probs = torch.ones(true_targets.size(0), ntokens).to(true_targets).to(torch.float)
-    else:
-        sampling_probs = probs.repeat(true_targets.size(0), 1)
-
-    idx_x = list(range(true_targets.size(0)))
-    sampling_probs[idx_x, true_targets] = 0
-
-    negative_targets = torch.multinomial(sampling_probs, k).to(true_targets)
-    result = torch.cat((true_targets.view(-1, 1), negative_targets), dim=1)
-
-    if probs is not None:
-        p_noise = probs[result]
-    else:
-        p_noise = None
-
-    return result, p_noise
 
 
 def add_scalars(dir, logfile, writer):
@@ -130,13 +109,3 @@ def plot_experiments(experiments_dir):
         add_histograms(experiment_dir, 'model_mini.pt', writer)
 
         writer.close()
-
-
-def main():
-
-    cwd = os.getcwd()
-    plot_experiments(experiments_dir=os.path.join(cwd, 'experiments'))
-
-
-if __name__ == '__main__':
-    main()
