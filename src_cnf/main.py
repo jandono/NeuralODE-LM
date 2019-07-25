@@ -80,8 +80,8 @@ parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
 parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
-parser.add_argument('--decoder_log_pz0', default=True, action='store_false',
-                    help='Use the logits from the decoder as initial log densities.')
+parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
+                    help='Use initial distribution obtained from a decoding layer.')
 parser.add_argument('--transfer', type=str, help='Location to a pretrained LM model,\
                     for weight initialization.')
 parser.add_argument('--freeze', default=False, action='store_true',
