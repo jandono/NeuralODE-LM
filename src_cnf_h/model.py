@@ -316,7 +316,6 @@ class RNNModel(nn.Module):
         if p_noise is not None:
             log_pz1 -= torch.log(p_noise)
 
-        # print('log_pz1 shape', log_pz1.shape)
         prob = nn.functional.softmax(log_pz1, -1)
 
         ############################################################

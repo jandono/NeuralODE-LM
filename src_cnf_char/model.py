@@ -111,7 +111,6 @@ class CNFBlock(nn.Module):
 
         # This can be batched, but as memory is bigger issue this is more optimal
         if log_pz0 is None:
-            print('test')
             for h_i in h:
 
                 if log_pz0 is None:
@@ -235,15 +234,12 @@ class RNNModel(nn.Module):
         # Continuous Normalizing Flows
         ############################################################
 
-        # if self.decoder_log_pz0:
-        #     log_pz0 = self.decoder(output)
-        # else:
-        #     log_pz0 = None
+        if self.decoder_log_pz0:
+            log_pz0 = self.decoder(output)
+        else:
+            log_pz0 = None
 
-        log_pz0 = self.decoder(output)
         log_pz1 = self.cnf(output, self.encoder.weight, log_pz0)
-        # log_pz1 = log_pz0
-        # print('log_pz1 shape', log_pz1.shape)
         prob = nn.functional.softmax(log_pz1, -1)
 
         ############################################################
