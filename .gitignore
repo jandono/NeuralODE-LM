@@ -1,9 +1,9 @@
 data/*
 .idea
-src/PTB*
+*PTB*
 baselines/*
 *__pycache__*
 torchdiffeq-master/*
 ffjord-master/*
-*experiments/*
-*logs/*
+*/experiments/*
+*/logs/*
