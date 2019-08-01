@@ -1,19 +1,16 @@
 import argparse
-import os
-import sys
 import time
+import os, sys
 import math
-
 import numpy as np
+np.random.seed(331)
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
-from torch import autograd
-
-import gc
+from torch.autograd import Variable
 
 import data
 import model
+import os
 
 from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
 
@@ -21,13 +18,11 @@ parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN
 parser.add_argument('--data', type=str, default='./penn/',
                     help='location of the data corpus')
 parser.add_argument('--model', type=str, default='LSTM',
-                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, SRU)')
+                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU)')
 parser.add_argument('--emsize', type=int, default=400,
                     help='size of word embeddings')
 parser.add_argument('--nhid', type=int, default=1150,
                     help='number of hidden units per layer')
-parser.add_argument('--nhidlast', type=int, default=-1,
-                    help='number of hidden units for the last rnn layer')
 parser.add_argument('--nlayers', type=int, default=3,
                     help='number of layers')
 parser.add_argument('--lr', type=float, default=30,
@@ -36,7 +31,7 @@ parser.add_argument('--clip', type=float, default=0.25,
                     help='gradient clipping')
 parser.add_argument('--epochs', type=int, default=8000,
                     help='upper epoch limit')
-parser.add_argument('--batch_size', type=int, default=20, metavar='N',
+parser.add_argument('--batch_size', type=int, default=80, metavar='N',
                     help='batch size')
 parser.add_argument('--bptt', type=int, default=70,
                     help='sequence length')
@@ -62,8 +57,8 @@ parser.add_argument('--cuda', action='store_false',
                     help='use CUDA')
 parser.add_argument('--log-interval', type=int, default=200, metavar='N',
                     help='report interval')
-parser.add_argument('--save', type=str,  default='EXP',
-                    help='path to save the final model')
+parser.add_argument('--save', type=str,  required=True,
+                    help='path to the directory that save the final model')
 parser.add_argument('--alpha', type=float, default=2,
                     help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
 parser.add_argument('--beta', type=float, default=1,
@@ -72,48 +67,41 @@ parser.add_argument('--wdecay', type=float, default=1.2e-6,
                     help='weight decay applied to all weights')
 parser.add_argument('--continue_train', action='store_true',
                     help='continue train from a checkpoint')
+parser.add_argument('--n_experts', type=int, default=10,
+                    help='number of experts')
 parser.add_argument('--small_batch_size', type=int, default=-1,
                     help='the batch size for computation. batch_size should be divisible by small_batch_size.\
-                     In our implementation, we compute gradients with small_batch_size multiple times, and accumulate\
-                     the gradients until batch_size is reached. An update step is then performed.')
+                     In our implementation, we compute gradients with small_batch_size multiple times, and accumulate the gradients\
+                     until batch_size is reached. An update step is then performed.')
 parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
-parser.add_argument('--single_gpu', default=False, action='store_true',
-                    help='use single GPU')
-parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
-                    help='Use initial distribution obtained from a decoding layer.')
-parser.add_argument('--transfer', type=str, help='Location to a pretrained LM model,\
-                    for weight initialization.')
-parser.add_argument('--freeze', default=False, action='store_true',
-                    help='To be used in conjunction with --transfer, to specify whether\
-                    transferred weights should be freezed.')
-
+parser.add_argument('--single_gpu', default=False, action='store_true', help='use single GPU')
 args = parser.parse_args()
 
-if args.nhidlast < 0:
-    args.nhidlast = args.emsize
-if args.dropoutl < 0:
-    args.dropoutl = args.dropouth
-if args.small_batch_size < 0:
-    args.small_batch_size = args.batch_size
+print('finetune load path: {}/model.pt. '.format(args.save))
+print('log save path: {}/finetune_log.txt'.format(args.save))
+print('model save path: {}/finetune_model.pt'.format(args.save))
 
+log_file = os.path.join(args.save, 'finetune_log.txt')
 if not args.continue_train:
-    args.save = '{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
-    create_exp_dir(args.save, scripts_to_save=['main.py', 'model.py'])
+    if os.path.exists(log_file):
+        os.remove(log_file)
 
 
 def logging(s, print_=True, log_=True):
     if print_:
         print(s)
     if log_:
-        with open(os.path.join(args.save, 'log.txt'), 'a+') as f_log:
+        with open(log_file, 'a+') as f_log:
             f_log.write(s + '\n')
 
-    sys.stdout.flush()
 
+if args.dropoutl < 0:
+    args.dropoutl = args.dropouth
+if args.small_batch_size < 0:
+    args.small_batch_size = args.batch_size
 
 # Set the random seed manually for reproducibility.
-np.random.seed(args.seed)
 torch.manual_seed(args.seed)
 if torch.cuda.is_available():
     if not args.cuda:
@@ -127,14 +115,6 @@ if torch.cuda.is_available():
 
 corpus = data.Corpus(args.data)
 
-with open('labels.txt', 'w') as f:
-    for i in range(len(corpus.dictionary)):
-        f.write(corpus.dictionary.idx2word[i])
-        f.write('\n')
-
-assert 1 == 0
-
-
 eval_batch_size = 10
 test_batch_size = 1
 train_data = batchify(corpus.train, args.batch_size, args)
@@ -147,36 +127,9 @@ test_data = batchify(corpus.test, test_batch_size, args)
 
 ntokens = len(corpus.dictionary)
 if args.continue_train:
-    model = torch.load(os.path.join(args.save, 'model.pt'))
+    model = torch.load(os.path.join(args.save, 'finetune_model.pt'))
 else:
-    if args.freeze:
-        use_dropout = False
-    else:
-        use_dropout = True
-
-    model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
-                           args.decoder_log_pz0,
-                           args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-                           args.tied, args.dropoutl, use_dropout)
-
-    if args.transfer is not None:
-        copy_model = torch.load(args.transfer, map_location='cpu')
-
-        for name, param in model.named_parameters():
-            if name in copy_model.state_dict():
-                param.data = copy_model.state_dict()[name].data
-
-                if args.freeze:
-                    param.requires_grad = False
-
-        print('Trainable params')
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                print(name)
-            else:
-                assert torch.all(torch.eq(param, copy_model.state_dict()[name]))
-
-
+    model = torch.load(os.path.join(args.save, 'model.pt'))
 if args.cuda:
     if args.single_gpu:
         parallel_model = model.cuda()
@@ -184,10 +137,9 @@ if args.cuda:
         parallel_model = nn.DataParallel(model, dim=1).cuda()
 else:
     parallel_model = model
-
-total_params = sum(x.data.nelement() for x in model.parameters())
+total_params = sum(x.size()[0] * x.size()[1] if len(x.size()) > 1 else x.size()[0] for x in model.parameters())
 logging('Args: {}'.format(args))
-# logging('Model total parameters: {}'.format(total_params))
+logging('Model total parameters: {}'.format(total_params))
 
 criterion = nn.CrossEntropyLoss()
 
@@ -198,29 +150,24 @@ criterion = nn.CrossEntropyLoss()
 
 def evaluate(data_source, batch_size=10):
     # Turn on evaluation mode which disables dropout.
-    # print('EVALUATING')
     model.eval()
     total_loss = 0
-    # ntokens = len(corpus.dictionary)
+    ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(batch_size)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
-
-            # print('{} | {}'.format(i, data_source.size(0) - 1))
             data, targets = get_batch(data_source, i, args)
             targets = targets.view(-1)
-
+            
             log_prob, hidden = parallel_model(data, hidden)
             loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), targets).data
 
-            total_loss += loss * len(data)
-
+            total_loss += len(data) * loss
             hidden = repackage_hidden(hidden)
     return total_loss.item() / len(data_source)
 
 
 def train():
-
     assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
 
     # Turn on training mode which enables dropout.
@@ -229,10 +176,7 @@ def train():
     ntokens = len(corpus.dictionary)
     hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
     batch, i = 0, 0
-
-    # with torch.autograd.detect_anomaly():
     while i < train_data.size(0) - 1 - 1:
-
         bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Prevent excessively small or negative sequence lengths
         seq_len = max(5, int(np.random.normal(bptt, 5)))
@@ -243,11 +187,13 @@ def train():
         optimizer.param_groups[0]['lr'] = lr2 * seq_len / args.bptt
         model.train()
         data, targets = get_batch(train_data, i, args, seq_len=seq_len)
+
         optimizer.zero_grad()
 
         start, end, s_id = 0, args.small_batch_size, 0
         while start < args.batch_size:
             cur_data, cur_targets = data[:, start: end], targets[:, start: end].contiguous().view(-1)
+
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
@@ -262,14 +208,11 @@ def train():
             loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
             loss *= args.small_batch_size / args.batch_size
             total_loss += raw_loss.data * args.small_batch_size / args.batch_size
-
             loss.backward()
 
             s_id += 1
             start = end
             end = start + args.small_batch_size
-
-            gc.collect()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)
@@ -283,31 +226,25 @@ def train():
             logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
-                              elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
         ###
         batch += 1
         i += seq_len
 
-
 # Loop over epochs.
 lr = args.lr
+stored_loss = evaluate(val_data)
 best_val_loss = []
-stored_loss = 100000000
-
 # At any point you can hit Ctrl + C to break out of training early.
 try:
+    # optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+    optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
     if args.continue_train:
-        optimizer_state = torch.load(os.path.join(args.save, 'optimizer.pt'))
-        if 't0' in optimizer_state['param_groups'][0]:
-            optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-        else:
-            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+        optimizer_state = torch.load(os.path.join(args.save, 'finetune_optimizer.pt'))
         optimizer.load_state_dict(optimizer_state)
-    else:
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
-
+        
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train()
@@ -326,41 +263,31 @@ try:
             logging('-' * 89)
 
             if val_loss2 < stored_loss:
-                save_checkpoint(model, optimizer, args.save)
+                save_checkpoint(model, optimizer, args.save, finetune=True)
                 logging('Saving Averaged!')
                 stored_loss = val_loss2
 
             for prm in model.parameters():
                 prm.data = tmp[prm].clone()
 
-        else:
-            val_loss = evaluate(val_data, eval_batch_size)
-            logging('-' * 89)
-            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                               val_loss, math.exp(val_loss)))
-            logging('-' * 89)
+        if (len(best_val_loss)>args.nonmono and val_loss2 > min(best_val_loss[:-args.nonmono])):
+            logging('Done!')
+            break
+            optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
+            #optimizer.param_groups[0]['lr'] /= 2.
+        best_val_loss.append(val_loss2)
 
-            if val_loss < stored_loss:
-                save_checkpoint(model, optimizer, args.save)
-                logging('Saving Normal!')
-                stored_loss = val_loss
-
-            if 't0' not in optimizer.param_groups[0] and (len(best_val_loss)>args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
-                logging('Switching!')
-                optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-                #optimizer.param_groups[0]['lr'] /= 2.
-            best_val_loss.append(val_loss)
-
+        # ADDED BY JOVAN, FLUSHING IS NEEDED WHEN RUNNING EXPERIMENTS ON LEONHARD
+        sys.stdout.flush()
 
 except KeyboardInterrupt:
     logging('-' * 89)
     logging('Exiting from training early')
 
 # Load the best saved model.
-model = torch.load(os.path.join(args.save, 'model.pt'))
+model = torch.load(os.path.join(args.save, 'finetune_model.pt'))
 parallel_model = nn.DataParallel(model, dim=1).cuda()
-
+    
 # Run on test data.
 test_loss = evaluate(test_data, test_batch_size)
 logging('=' * 89)

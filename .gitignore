@@ -5,3 +5,5 @@ baselines/*
 *__pycache__*
 torchdiffeq-master/*
 ffjord-master/*
+*experiments/*
+*logs/*

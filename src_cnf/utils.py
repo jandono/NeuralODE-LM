@@ -96,16 +96,27 @@ def add_histograms(dir, model_file, writer, step=0):
         writer.add_histogram(name, param, step)
 
 
-def plot_experiments(experiments_dir):
+def plot_experiments(experiments_dir, model_name):
 
     labels_file = 'labels.txt'
+
     for dir in os.listdir(experiments_dir):
         writing_dir = 'logs/' + dir.split('/')[-1]
         writer = tensorboardX.SummaryWriter(writing_dir)
 
         experiment_dir = os.path.join(os.path.realpath(experiments_dir), dir)
         add_scalars(experiment_dir, 'log.txt', writer)
-        add_embeddings(experiment_dir, 'model_mini.pt', labels_file, writer)
-        add_histograms(experiment_dir, 'model_mini.pt', writer)
+        add_embeddings(experiment_dir, model_name, labels_file, writer)
+        add_histograms(experiment_dir, model_name, writer)
 
         writer.close()
+
+
+def main():
+
+    cwd = os.getcwd()
+    plot_experiments(experiments_dir=os.path.join(cwd, 'experiments'), model_name='model.pt')
+
+
+if __name__ == '__main__':
+    main()

@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
 from torch import autograd
 
 import gc
@@ -15,7 +16,7 @@ import gc
 import data
 import model
 
-from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint
+from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_checkpoint, negative_targets_torch
 
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./penn/',
@@ -90,6 +91,7 @@ parser.add_argument('--freeze', default=False, action='store_true',
 
 args = parser.parse_args()
 
+
 if args.nhidlast < 0:
     args.nhidlast = args.emsize
 if args.dropoutl < 0:
@@ -126,14 +128,6 @@ if torch.cuda.is_available():
 ###############################################################################
 
 corpus = data.Corpus(args.data)
-
-with open('labels.txt', 'w') as f:
-    for i in range(len(corpus.dictionary)):
-        f.write(corpus.dictionary.idx2word[i])
-        f.write('\n')
-
-assert 1 == 0
-
 
 eval_batch_size = 10
 test_batch_size = 1
@@ -176,7 +170,6 @@ else:
             else:
                 assert torch.all(torch.eq(param, copy_model.state_dict()[name]))
 
-
 if args.cuda:
     if args.single_gpu:
         parallel_model = model.cuda()
@@ -198,15 +191,15 @@ criterion = nn.CrossEntropyLoss()
 
 def evaluate(data_source, batch_size=10):
     # Turn on evaluation mode which disables dropout.
-    # print('EVALUATING')
+    print('EVALUATING')
     model.eval()
     total_loss = 0
-    # ntokens = len(corpus.dictionary)
+    ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(batch_size)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
 
-            # print('{} | {}'.format(i, data_source.size(0) - 1))
+            print('{} | {}'.format(i, data_source.size(0) - 1))
             data, targets = get_batch(data_source, i, args)
             targets = targets.view(-1)
 
@@ -221,6 +214,8 @@ def evaluate(data_source, batch_size=10):
 
 def train():
 
+    # with autograd.detect_anomaly():
+
     assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
 
     # Turn on training mode which enables dropout.
@@ -229,10 +224,7 @@ def train():
     ntokens = len(corpus.dictionary)
     hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
     batch, i = 0, 0
-
-    # with torch.autograd.detect_anomaly():
     while i < train_data.size(0) - 1 - 1:
-
         bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Prevent excessively small or negative sequence lengths
         seq_len = max(5, int(np.random.normal(bptt, 5)))
@@ -252,6 +244,7 @@ def train():
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
+            # FULL SOFTMAX
             log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
             raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
 
@@ -283,7 +276,7 @@ def train():
             logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
-                              elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
         ###
@@ -295,7 +288,8 @@ def train():
 lr = args.lr
 best_val_loss = []
 stored_loss = 100000000
-
+stored_loss_mini = 100000000
+val_freq = 20
 # At any point you can hit Ctrl + C to break out of training early.
 try:
     if args.continue_train:
@@ -311,6 +305,7 @@ try:
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train()
+
         if 't0' in optimizer.param_groups[0]:
             tmp = {}
             for prm in model.parameters():
@@ -351,7 +346,6 @@ try:
                 optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
                 #optimizer.param_groups[0]['lr'] /= 2.
             best_val_loss.append(val_loss)
-
 
 except KeyboardInterrupt:
     logging('-' * 89)
