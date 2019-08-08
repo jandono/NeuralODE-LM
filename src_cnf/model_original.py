@@ -38,44 +38,21 @@ class MVNLogProbBatched(nn.Module):
         return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - emb_size/2 * math.log(2 * math.pi)
 
 
-class Swish(nn.Module):
-    """Implementation of Swish: a Self-Gated Activation Function
-        Swish activation is simply f(x)=x⋅sigmoid(x)
-        Paper: https://arxiv.org/abs/1710.05941
-    Shape:
-        - Input: :math:`(N, *)` where `*` means, any number of additional
-          dimensions
-        - Output: :math:`(N, *)`, same shape as the input
-    Examples::
-        >>> m = nn.Swish()
-        >>> input = autograd.Variable(torch.randn(2))
-        >>> print(input)
-        >>> print(m(input))
-    """
-
-    def forward(self, x):
-        return x * torch.sigmoid(x)
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' ()'
-
-
 class ODEnet(nn.Module):
 
     def __init__(self, dim):
         super(ODEnet, self).__init__()
-        self.linear_x = layers.diffeq_layers.ConcatLinear(dim, dim)
-        self.linear_h = layers.diffeq_layers.ConcatLinear(dim, dim)
-        self.linear = nn.Linear(dim, dim)
+        self.linear1 = layers.diffeq_layers.ConcatLinear(dim, dim)
+        self.linear2 = nn.Linear(dim, dim)
         self.soft_relu = nn.Softplus()
-        # self.swish = Swish()
 
-    def forward(self, t, x, h):
-        # For simple cases time can be omitted.
-        # However, for CNF they mention that they use a Hypernetwork or Concatenation
-        out = self.linear_x(t, x) + self.linear_h(t, h)
+        # self.init_weights()
+
+    def forward(self, t, x):
+
+        out = self.linear1(t, x)
         out = self.soft_relu(out)
-        out = self.linear(out)
+        out = self.linear2(out)
 
         return out
 
@@ -86,7 +63,6 @@ class CNFBlock(nn.Module):
         super(CNFBlock, self).__init__()
 
         def build_cnf():
-
             # diffeq = layers.ODEnet(
             #     hidden_dims=(ninp,),
             #     input_shape=(ninp,),
@@ -104,13 +80,13 @@ class CNFBlock(nn.Module):
                 # residual=args.residual,
                 # rademacher=args.rademacher,
             )
+
             cnf = layers.CNF(
                 odefunc=odefunc,
                 # T=args.time_length,
                 # train_T=args.train_T,
                 # regularization_fns=None,
-                # solver=args.solver,
-                # solver='rk4'
+                # solver='rk4',
             )
             return cnf
 
@@ -125,29 +101,25 @@ class CNFBlock(nn.Module):
         seq_length, batch_size, emb_size = h.shape
         h = h.view(seq_length * batch_size, emb_size)
 
+        # FULL SOFTMAX SAME TRANSFORMATION BATCHED
+        # When the transformation does not depend on the hidden state only one CNF
+        # can be solved instead of seq_length * batch_size CNFs
+
         z0 = emb_matrix
         zeros = torch.zeros(self.ntoken, 1).to(z0)
+        z1, delta_log_pz = self.cnf(z0, zeros)
 
-        l_delta_log_pz = []
-        l_log_pz0 = []
-        for i in range(0, seq_length*batch_size):
-
-            _, tmp_delta_log_pz = self.cnf(z0, h[i].view(1, -1), zeros)
-            tmp_delta_log_pz = tmp_delta_log_pz.view(-1, self.ntoken)
-            l_delta_log_pz.append(tmp_delta_log_pz)
-
-            if log_pz0 is None:
-                tmp_log_pz0 = self.mvn_log_prob(z0, h[i]).view(-1, self.ntoken)
-                l_log_pz0.append(tmp_log_pz0)
-
-        delta_log_pz = torch.cat(l_delta_log_pz).view(-1, self.ntoken)
-
+        # This can be batched, but as memory is bigger issue this is more optimal
         if log_pz0 is None:
-            log_pz0 = torch.cat(l_log_pz0)
+            for h_i in h:
 
-        log_pz0 = log_pz0.view(-1, self.ntoken)
+                if log_pz0 is None:
+                    log_pz0 = self.mvn_log_prob(z0, h_i)
+                else:
+                    log_pz0 = torch.cat((log_pz0, self.mvn_log_prob(z0, h_i)))
 
-        log_pz1 = log_pz0 - delta_log_pz
+        log_pz1 = log_pz0.view(-1, 1) - delta_log_pz.repeat(seq_length * batch_size, 1)
+        log_pz1 = log_pz1.view(-1, self.ntoken)
 
         return log_pz1
 
@@ -277,8 +249,6 @@ class RNNModel(nn.Module):
         else:
             log_prob = torch.log(torch.add(prob, 1e-8))
             model_output = log_prob
-
-        # print('model_output shape', model_output.shape)
 
         model_output = model_output.view(-1, batch_size, self.ntoken)
 

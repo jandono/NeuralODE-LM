@@ -20,8 +20,8 @@ from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_ch
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./penn/',
                     help='location of the data corpus')
-parser.add_argument('--model', type=str, default='LSTM',
-                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, SRU)')
+parser.add_argument('--model', type=str, default='LSTM', choices=['RNN_TANH', 'RNN_RELU', 'LSTM', 'GRU', 'SRU'],
+                    help='Type of the cell to be used in the recurrent net.')
 parser.add_argument('--emsize', type=int, default=400,
                     help='size of word embeddings')
 parser.add_argument('--nhid', type=int, default=1150,
@@ -87,7 +87,6 @@ parser.add_argument('--transfer', type=str, help='Location to a pretrained LM mo
 parser.add_argument('--freeze', default=False, action='store_true',
                     help='To be used in conjunction with --transfer, to specify whether\
                     transferred weights should be freezed.')
-
 args = parser.parse_args()
 
 if args.nhidlast < 0:

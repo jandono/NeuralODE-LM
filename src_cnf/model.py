@@ -111,7 +111,6 @@ class CNFBlock(nn.Module):
 
         # This can be batched, but as memory is bigger issue this is more optimal
         if log_pz0 is None:
-            print('test')
             for h_i in h:
 
                 if log_pz0 is None:
@@ -190,7 +189,7 @@ class RNNModel(nn.Module):
         # self.decoder.bias.data.fill_(0)
         # self.decoder.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, input, hidden, return_h=False, return_prob=False, sampled_targets=None):
+    def forward(self, input, hidden, return_h=False, return_prob=False):
 
         batch_size = input.size(1)
 
@@ -251,13 +250,7 @@ class RNNModel(nn.Module):
             log_prob = torch.log(torch.add(prob, 1e-8))
             model_output = log_prob
 
-        # print('model_output shape', model_output.shape)
-
-        # FULL SOFTMAX
-        if sampled_targets is None:
-            model_output = model_output.view(-1, batch_size, self.ntoken)
-        else:
-            model_output = model_output.view(-1, batch_size, sampled_targets.size(1))
+        model_output = model_output.view(-1, batch_size, self.ntoken)
 
         if return_h:
             return model_output, hidden, raw_outputs, outputs

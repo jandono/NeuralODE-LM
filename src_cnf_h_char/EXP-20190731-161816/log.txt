@@ -1,7 +1,0 @@
-Args: Namespace(alpha=2, batch_size=12, beta=1, bptt=70, clip=0.25, continue_train=False, cuda=False, data='../data/pennchar', decoder_log_pz0=True, dropout=0.4, dropoute=0.1, dropouth=0.225, dropouti=0.4, dropoutl=0.29, emsize=2, epochs=1000, freeze=False, log_interval=1, lr=0.1, max_seq_len_delta=40, model='LSTM', nhid=9, nhidlast=2, nlayers=3, nonmono=5, save='EXP-20190731-161816', seed=28, single_gpu=True, small_batch_size=12, tied=True, transfer=None, wdecay=1.2e-06, wdrop=0.5)
-| epoch   1 |     1/ 5973 batches | lr 0.10 | ms/batch 143785.84 | loss  7.87 | ppl  2611.22
-| epoch   1 |     2/ 5973 batches | lr 0.10 | ms/batch 62863.77 | loss  3.93 | ppl    51.00
-| epoch   1 |     3/ 5973 batches | lr 0.10 | ms/batch 71529.57 | loss  3.93 | ppl    50.77
-| epoch   1 |     4/ 5973 batches | lr 0.10 | ms/batch 25977.24 | loss  3.91 | ppl    50.07
------------------------------------------------------------------------------------------
-Exiting from training early
