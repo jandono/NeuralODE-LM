@@ -158,6 +158,7 @@ class RNNModel(nn.Module):
                  Variable(weight.new(1, bsz, self.nhid if l != self.nlayers - 1 else self.nhidlast).zero_()))
                 for l in range(self.nlayers)]
 
+
 if __name__ == '__main__':
     model = RNNModel('LSTM', 10, 12, 12, 12, 2)
     input = Variable(torch.LongTensor(13, 9).random_(0, 10))

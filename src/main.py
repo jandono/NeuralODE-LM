@@ -83,6 +83,8 @@ parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
 parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
+parser.add_argument('--optimizer', type=str, choices=['asgd', 'adam'], required=True,
+                    help='Optimizer to be used for training.')
 args = parser.parse_args()
 
 if args.nhidlast < 0:
@@ -262,18 +264,40 @@ stored_loss = 100000000
 try:
     if args.continue_train:
         optimizer_state = torch.load(os.path.join(args.save, 'optimizer.pt'))
-        if 't0' in optimizer_state['param_groups'][0]:
+
+        if args.optimizer is 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+        elif 't0' in optimizer_state['param_groups'][0]:
             optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
         else:
             optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+
         optimizer.load_state_dict(optimizer_state)
     else:
-        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+
+        if args.optimizer is 'adam':
+            optimizer = torch.optim.Adam(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
+        else:
+            optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, weight_decay=args.wdecay)
 
     for epoch in range(1, args.epochs+1):
         epoch_start_time = time.time()
         train()
-        if 't0' in optimizer.param_groups[0]:
+
+        if args.optimizer is 'adam':
+            val_loss = evaluate(val_data, eval_batch_size)
+            logging('-' * 89)
+            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                               val_loss, math.exp(val_loss)))
+            logging('-' * 89)
+
+            if val_loss < stored_loss:
+                save_checkpoint(model, optimizer, args.save)
+                logging('Saving Normal!')
+                stored_loss = val_loss
+
+        elif 't0' in optimizer.param_groups[0]:
             tmp = {}
             for prm in model.parameters():
                 tmp[prm] = prm.data.clone()

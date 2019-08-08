@@ -104,7 +104,6 @@ class RNNModel(nn.Module):
         prob = nn.functional.softmax(logit.view(-1, self.ntoken), -1).view(-1, self.n_experts, self.ntoken)
         prob = (prob * prior.unsqueeze(2).expand_as(prob)).sum(1)
 
-
         if return_prob:
             model_output = prob
         else:

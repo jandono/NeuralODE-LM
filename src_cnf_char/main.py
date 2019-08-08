@@ -87,9 +87,9 @@ parser.add_argument('--transfer', type=str, help='Location to a pretrained LM mo
 parser.add_argument('--freeze', default=False, action='store_true',
                     help='To be used in conjunction with --transfer, to specify whether\
                     transferred weights should be freezed.')
-
 args = parser.parse_args()
 
+assert 1 == 0
 if args.nhidlast < 0:
     args.nhidlast = args.emsize
 if args.dropoutl < 0:
@@ -127,14 +127,6 @@ if torch.cuda.is_available():
 
 corpus = data.Corpus(args.data)
 
-with open('labels.txt', 'w') as f:
-    for i in range(len(corpus.dictionary)):
-        f.write(corpus.dictionary.idx2word[i])
-        f.write('\n')
-
-assert 1 == 0
-
-
 eval_batch_size = 10
 test_batch_size = 1
 train_data = batchify(corpus.train, args.batch_size, args)
@@ -160,7 +152,10 @@ else:
                            args.tied, args.dropoutl, use_dropout)
 
     if args.transfer is not None:
-        copy_model = torch.load(args.transfer, map_location='cpu')
+        if args.cuda:
+            copy_model = torch.load(args.transfer, map_location='cpu')
+        else:
+            copy_model = torch.load(args.transfer)
 
         for name, param in model.named_parameters():
             if name in copy_model.state_dict():
