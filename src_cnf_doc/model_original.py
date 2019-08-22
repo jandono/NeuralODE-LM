@@ -1,3 +1,4 @@
+import sys
 import math
 import torch
 import torch.nn as nn
@@ -8,60 +9,131 @@ from embed_regularize import embedded_dropout
 from locked_dropout import LockedDropout
 from weight_drop import WeightDrop
 
+import layers
 
-from torchdiffeq import odeint_adjoint as odeint
+
+class MVNLogProb(nn.Module):
+
+    def __init__(self):
+        super(MVNLogProb, self).__init__()
+
+    def forward(self, x, mu):
+        batch_size = x.shape[0]
+        emb_size = x.shape[1]
+        diff = (x - mu).view(batch_size, 1, emb_size)
+        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - emb_size/2 * math.log(2 * math.pi)
 
 
-class ODEfunc(nn.Module):
+class MVNLogProbBatched(nn.Module):
 
-    def __init__(self, dim, bottleneck):
-        super(ODEfunc, self).__init__()
-        self.linear1 = nn.Linear(dim, bottleneck)
-        self.relu = nn.ReLU(inplace=True)  # Inplace can cause problems
-        self.linear2 = nn.Linear(bottleneck, dim)
-        self.nfe = 0
+    def __init__(self):
+        super(MVNLogProbBatched, self).__init__()
+
+    def forward(self, x, mu, ntoken):
+        batch_size = x.shape[0]
+        emb_size = x.shape[1]
+        mu = mu.repeat(1, ntoken).view(-1, emb_size)
+
+        diff = (x - mu).view(batch_size, 1, emb_size)
+        return -0.5 * diff.bmm(diff.transpose(1, 2)).squeeze() - emb_size/2 * math.log(2 * math.pi)
+
+
+class ODEnet(nn.Module):
+
+    def __init__(self, dim):
+        super(ODEnet, self).__init__()
+        self.linear1 = layers.diffeq_layers.ConcatLinear(dim, dim)
+        self.linear2 = nn.Linear(dim, dim)
+        self.soft_relu = nn.Softplus()
+
+        # self.init_weights()
 
     def forward(self, t, x):
-        # For simple cases time can be omitted.
-        # However, for CNF they mention that they use a Hypernetwork or Concatenation
-        self.nfe += 1
-        out = self.linear1(x)
-        out = self.relu(out)
+
+        out = self.linear1(t, x)
+        out = self.soft_relu(out)
         out = self.linear2(out)
+
         return out
 
 
-class ODEBlock(nn.Module):
+class CNFBlock(nn.Module):
 
-    def __init__(self, odefunc, rtol, atol):
-        super(ODEBlock, self).__init__()
-        self.odefunc = odefunc
-        self.integration_time = torch.tensor([0, 1]).float()
-        self.rtol = rtol
-        self.atol = atol
+    def __init__(self, ninp, ntoken):
+        super(CNFBlock, self).__init__()
 
-    def forward(self, x):
-        self.integration_time = self.integration_time.type_as(x)
-        out = odeint(self.odefunc, x, self.integration_time, rtol=self.rtol, atol=self.atol)
-        return out[1]
+        def build_cnf():
+            # diffeq = layers.ODEnet(
+            #     hidden_dims=(ninp,),
+            #     input_shape=(ninp,),
+            #     strides=None,
+            #     conv=False,
+            #     layer_type='concat',
+            #     nonlinearity='softplus'
+            # )
 
-    @property
-    def nfe(self):
-        return self.odefunc.nfe
+            diffeq = ODEnet(ninp)
 
-    @nfe.setter
-    def nfe(self, value):
-        self.odefunc.nfe = value
+            odefunc = layers.ODEfunc(
+                diffeq=diffeq,
+                # divergence_fn=args.divergence_fn,
+                # residual=args.residual,
+                # rademacher=args.rademacher,
+            )
+
+            cnf = layers.CNF(
+                odefunc=odefunc,
+                # T=args.time_length,
+                # train_T=args.train_T,
+                # regularization_fns=None,
+                # solver='rk4',
+            )
+            return cnf
+
+        self.ninp = ninp
+        self.ntoken = ntoken
+        self.mvn_log_prob = MVNLogProb()
+        self.mvn_log_prob_batched = MVNLogProbBatched()
+        self.cnf = build_cnf()
+
+    def forward(self, h, emb_matrix, log_pz0=None):
+
+        seq_length, batch_size, emb_size = h.shape
+        h = h.view(seq_length * batch_size, emb_size)
+
+        # FULL SOFTMAX SAME TRANSFORMATION BATCHED
+        # When the transformation does not depend on the hidden state only one CNF
+        # can be solved instead of seq_length * batch_size CNFs
+
+        z0 = emb_matrix
+        zeros = torch.zeros(self.ntoken, 1).to(z0)
+        z1, delta_log_pz = self.cnf(z0, zeros)
+
+        # This can be batched, but as memory is bigger issue this is more optimal
+        if log_pz0 is None:
+            for h_i in h:
+
+                if log_pz0 is None:
+                    log_pz0 = self.mvn_log_prob(z0, h_i)
+                else:
+                    log_pz0 = torch.cat((log_pz0, self.mvn_log_prob(z0, h_i)))
+
+        log_pz1 = log_pz0.view(-1, 1) - delta_log_pz.repeat(seq_length * batch_size, 1)
+        log_pz1 = log_pz1.view(-1, self.ntoken)
+
+        return log_pz1
 
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nhidlast, nlayers,
+                 decoder_log_pz0,
                  dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0,
-                 tie_weights=False, ldropout=0.5):
+                 tie_weights=False, ldropout=0.5, use_dropout=True):
         super(RNNModel, self).__init__()
-        self.use_dropout = True
+
+        self.use_dropout = use_dropout
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
 
@@ -73,12 +145,11 @@ class RNNModel(nn.Module):
                          self.rnns]
         self.rnns = torch.nn.ModuleList(self.rnns)
 
-        # ADDED BY JOVAN, DEBUGGING
         if nhidlast != ninp:
             self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
 
         self.decoder = nn.Linear(ninp, ntoken)
-        self.ode = ODEBlock(ODEfunc(ntoken, ninp), 1e-3, 1e-3)
+        self.cnf = CNFBlock(ninp, ntoken)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -87,8 +158,8 @@ class RNNModel(nn.Module):
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
         if tie_weights:
-            # if nhid != ninp:
-            #    raise ValueError('When using the tied flag, nhid must be equal to emsize')
+            if nhidlast != ninp:
+                raise ValueError('When using the tied flag, nhid must be equal to emsize')
             self.decoder.weight = self.encoder.weight
 
         self.init_weights()
@@ -98,6 +169,7 @@ class RNNModel(nn.Module):
         self.nhid = nhid
         self.nhidlast = nhidlast
         self.nlayers = nlayers
+        self.decoder_log_pz0 = decoder_log_pz0
         self.dropout = dropout
         self.dropouti = dropouti
         self.dropouth = dropouth
@@ -114,10 +186,11 @@ class RNNModel(nn.Module):
     def init_weights(self):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
-        self.decoder.bias.data.fill_(0)
-        self.decoder.weight.data.uniform_(-initrange, initrange)
+        # self.decoder.bias.data.fill_(0)
+        # self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
+
         batch_size = input.size(1)
 
         emb = embedded_dropout(self.encoder, input,
@@ -148,11 +221,28 @@ class RNNModel(nn.Module):
         if self.nhidlast != self.ninp:
             output = self.latent(output)
 
-        logit = self.decoder(output)
-        transformed = self.ode(logit)
-
-        prob = nn.functional.softmax(transformed, -1)
+        ############################################################
+        # Regular LM
+        ############################################################
+        #
+        # logit = self.decoder(output)
         # prob = nn.functional.softmax(logit, -1)
+        #
+        ############################################################
+
+        ############################################################
+        # Continuous Normalizing Flows
+        ############################################################
+
+        if self.decoder_log_pz0:
+            log_pz0 = self.decoder(output)
+        else:
+            log_pz0 = None
+
+        log_pz1 = self.cnf(output, self.encoder.weight, log_pz0)
+        prob = nn.functional.softmax(log_pz1, -1)
+
+        ############################################################
 
         if return_prob:
             model_output = prob
@@ -176,6 +266,7 @@ class RNNModel(nn.Module):
 if __name__ == '__main__':
     model = RNNModel('LSTM', 10, 12, 12, 12, 2)
     input = Variable(torch.LongTensor(13, 9).random_(0, 10))
+    print('input', input)
     hidden = model.init_hidden(9)
     model(input, hidden)
 
