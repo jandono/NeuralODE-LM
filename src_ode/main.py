@@ -1,14 +1,12 @@
 import argparse
-import os
-import sys
+import os, sys
 import time
 import math
-
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch import autograd
+from torch.autograd import Variable
 
 import gc
 
@@ -20,8 +18,8 @@ from utils import batchify, get_batch, repackage_hidden, create_exp_dir, save_ch
 parser = argparse.ArgumentParser(description='PyTorch PennTreeBank/WikiText2 RNN/LSTM Language Model')
 parser.add_argument('--data', type=str, default='./penn/',
                     help='location of the data corpus')
-parser.add_argument('--model', type=str, default='LSTM', choices=['RNN_TANH', 'RNN_RELU', 'LSTM', 'GRU', 'SRU'],
-                    help='Type of the cell to be used in the recurrent net.')
+parser.add_argument('--model', type=str, default='LSTM',
+                    help='type of recurrent net (RNN_TANH, RNN_RELU, LSTM, GRU, SRU)')
 parser.add_argument('--emsize', type=int, default=400,
                     help='size of word embeddings')
 parser.add_argument('--nhid', type=int, default=1150,
@@ -72,21 +70,19 @@ parser.add_argument('--wdecay', type=float, default=1.2e-6,
                     help='weight decay applied to all weights')
 parser.add_argument('--continue_train', action='store_true',
                     help='continue train from a checkpoint')
+
+# COMMENTED OUT BY JOVAN, THIS IS ONLY NEEDED FOR MOS
+# parser.add_argument('--n_experts', type=int, default=10,
+#                     help='number of experts')
+
 parser.add_argument('--small_batch_size', type=int, default=-1,
                     help='the batch size for computation. batch_size should be divisible by small_batch_size.\
-                     In our implementation, we compute gradients with small_batch_size multiple times, and accumulate\
-                     the gradients until batch_size is reached. An update step is then performed.')
+                     In our implementation, we compute gradients with small_batch_size multiple times, and accumulate the gradients\
+                     until batch_size is reached. An update step is then performed.')
 parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
 parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
-parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
-                    help='Use initial distribution obtained from a decoding layer.')
-parser.add_argument('--transfer', type=str, help='Location to a pretrained LM model,\
-                    for weight initialization.')
-parser.add_argument('--freeze', default=False, action='store_true',
-                    help='To be used in conjunction with --transfer, to specify whether\
-                    transferred weights should be freezed.')
 parser.add_argument('--optimizer', type=str, choices=['asgd', 'adam'], required=True,
                     help='Optimizer to be used for training.')
 args = parser.parse_args()
@@ -111,7 +107,6 @@ def logging(s, print_=True, log_=True):
             f_log.write(s + '\n')
 
     sys.stdout.flush()
-
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
@@ -142,33 +137,15 @@ ntokens = len(corpus.dictionary)
 if args.continue_train:
     model = torch.load(os.path.join(args.save, 'model.pt'))
 else:
-    if args.freeze:
-        use_dropout = False
-    else:
-        use_dropout = True
+    # COMMENTED OUT BY JOVAN, THIS IS HOW YOU CREATE A MODEL IF YOU WANT TO USE MOS
+    # model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
+    #                    args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
+    #                    args.tied, args.dropoutl, args.n_experts)
 
+    # ADDED BY JOVAN, REMOVED THE args.n_experts PARAMETER
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
-                           args.decoder_log_pz0,
                            args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-                           args.tied, args.dropoutl, use_dropout)
-
-    if args.transfer is not None:
-        copy_model = torch.load(args.transfer, map_location='cpu')
-
-        for name, param in model.named_parameters():
-            if name in copy_model.state_dict():
-                param.data = copy_model.state_dict()[name].data
-
-                if args.freeze:
-                    param.requires_grad = False
-
-        print('Trainable params')
-        for name, param in model.named_parameters():
-            if param.requires_grad:
-                print(name)
-            else:
-                assert torch.all(torch.eq(param, copy_model.state_dict()[name]))
-
+                           args.tied, args.dropoutl)
 
 if args.cuda:
     if args.single_gpu:
@@ -180,7 +157,7 @@ else:
 
 total_params = sum(x.data.nelement() for x in model.parameters())
 logging('Args: {}'.format(args))
-# logging('Model total parameters: {}'.format(total_params))
+logging('Model total parameters: {}'.format(total_params))
 
 criterion = nn.CrossEntropyLoss()
 
@@ -191,15 +168,12 @@ criterion = nn.CrossEntropyLoss()
 
 def evaluate(data_source, batch_size=10):
     # Turn on evaluation mode which disables dropout.
-    # print('EVALUATING')
     model.eval()
     total_loss = 0
-    # ntokens = len(corpus.dictionary)
+    ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(batch_size)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
-
-            # print('{} | {}'.format(i, data_source.size(0) - 1))
             data, targets = get_batch(data_source, i, args)
             targets = targets.view(-1)
 
@@ -213,7 +187,6 @@ def evaluate(data_source, batch_size=10):
 
 
 def train():
-
     assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
 
     # Turn on training mode which enables dropout.
@@ -222,10 +195,7 @@ def train():
     ntokens = len(corpus.dictionary)
     hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
     batch, i = 0, 0
-
-    # with torch.autograd.detect_anomaly():
     while i < train_data.size(0) - 1 - 1:
-
         bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Prevent excessively small or negative sequence lengths
         seq_len = max(5, int(np.random.normal(bptt, 5)))
@@ -236,11 +206,13 @@ def train():
         optimizer.param_groups[0]['lr'] = lr2 * seq_len / args.bptt
         model.train()
         data, targets = get_batch(train_data, i, args, seq_len=seq_len)
+
         optimizer.zero_grad()
 
         start, end, s_id = 0, args.small_batch_size, 0
         while start < args.batch_size:
             cur_data, cur_targets = data[:, start: end], targets[:, start: end].contiguous().view(-1)
+
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
@@ -255,7 +227,6 @@ def train():
             loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
             loss *= args.small_batch_size / args.batch_size
             total_loss += raw_loss.data * args.small_batch_size / args.batch_size
-
             loss.backward()
 
             s_id += 1
@@ -276,7 +247,7 @@ def train():
             logging('| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.2f} | ms/batch {:5.2f} | '
                     'loss {:5.2f} | ppl {:8.2f}'.format(
                 epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
-                              elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
+                elapsed * 1000 / args.log_interval, cur_loss, math.exp(cur_loss)))
             total_loss = 0
             start_time = time.time()
         ###
@@ -366,7 +337,6 @@ try:
                 optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
                 #optimizer.param_groups[0]['lr'] /= 2.
             best_val_loss.append(val_loss)
-
 
 except KeyboardInterrupt:
     logging('-' * 89)
