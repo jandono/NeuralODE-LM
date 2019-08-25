@@ -12,11 +12,22 @@ from weight_drop import WeightDrop
 from torchdiffeq import odeint_adjoint as odeint
 
 
+class ConcatLinear(nn.Module):
+    def __init__(self, dim_in, dim_out):
+        super(ConcatLinear, self).__init__()
+        self._layer = nn.Linear(dim_in + 1, dim_out)
+
+    def forward(self, t, x):
+        tt = torch.ones_like(x[:, :1]) * t
+        ttx = torch.cat([tt, x], 1)
+        return self._layer(ttx)
+
+
 class ODEfunc(nn.Module):
 
     def __init__(self, dim, bottleneck):
         super(ODEfunc, self).__init__()
-        self.linear1 = nn.Linear(dim, bottleneck)
+        self.linear1 = nn.ConcatLinear(dim + 1, bottleneck)
         # self.relu = nn.ReLU(inplace=True)  # Inplace can cause problems
         self.soft_relu = nn.Softplus()
         self.linear2 = nn.Linear(bottleneck, dim)
@@ -26,8 +37,8 @@ class ODEfunc(nn.Module):
         # For simple cases time can be omitted.
         # However, for CNF they mention that they use a Hypernetwork or Concatenation
         self.nfe += 1
-        out = self.linear1(x)
-        out = self.relu(out)
+        out = self.linear1(t, x)
+        out = self.soft_relu(out)
         out = self.linear2(out)
         return out
 

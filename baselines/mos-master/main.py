@@ -94,12 +94,15 @@ if not args.continue_train:
     args.save = '{}-{}'.format(args.save, time.strftime("%Y%m%d-%H%M%S"))
     create_exp_dir(args.save, scripts_to_save=['main.py', 'model.py'])
 
+
 def logging(s, print_=True, log_=True):
     if print_:
         print(s)
     if log_:
         with open(os.path.join(args.save, 'log.txt'), 'a+') as f_log:
             f_log.write(s + '\n')
+
+    sys.stdout.flush()
 
 # Set the random seed manually for reproducibility.
 np.random.seed(args.seed)
