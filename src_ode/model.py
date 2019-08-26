@@ -27,7 +27,7 @@ class ODEfunc(nn.Module):
 
     def __init__(self, dim, bottleneck):
         super(ODEfunc, self).__init__()
-        self.linear1 = nn.ConcatLinear(dim + 1, bottleneck)
+        self.linear1 = ConcatLinear(dim + 1, bottleneck)
         # self.relu = nn.ReLU(inplace=True)  # Inplace can cause problems
         self.soft_relu = nn.Softplus()
         self.linear2 = nn.Linear(bottleneck, dim)
