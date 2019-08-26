@@ -81,7 +81,6 @@ parser.add_argument('--max_seq_len_delta', type=int, default=40,
 parser.add_argument('--single_gpu', default=False, action='store_true', 
                     help='use single GPU')
 args = parser.parse_args()
-args.cuda = False
 
 if args.nhidlast < 0:
     args.nhidlast = args.emsize
