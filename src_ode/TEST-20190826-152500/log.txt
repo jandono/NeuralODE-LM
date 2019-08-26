@@ -1,0 +1,2 @@
+Args: Namespace(alpha=2, batch_size=3, beta=1, bptt=70, clip=0.25, continue_train=False, cuda=False, data='../data/penn', dropout=0.4, dropoute=0.1, dropouth=0.225, dropouti=0.4, dropoutl=0.29, emsize=2, epochs=10, log_interval=1, lr=1.0, max_seq_len_delta=40, model='LSTM', nhid=2, nhidlast=2, nlayers=3, nonmono=5, optimizer='asgd', save='TEST-20190826-152500', seed=28, single_gpu=True, small_batch_size=3, tied=True, wdecay=1.2e-06, wdrop=0.5)
+Model total parameters: 80148

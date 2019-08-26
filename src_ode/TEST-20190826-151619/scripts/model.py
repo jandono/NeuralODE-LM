@@ -160,10 +160,8 @@ class RNNModel(nn.Module):
         if self.nhidlast != self.ninp:
             output = self.latent(output)
 
-        logits = self.decoder(output).view(-1, self.ntoken)
-        # print('logit shape:', logits.shape)
-        transformed = self.ode(logits)
-        # print('transformed shape:', transformed.shape)
+        logit = self.decoder(output)
+        transformed = self.ode(logit)
 
         prob = nn.functional.softmax(transformed, -1)
         # prob = nn.functional.softmax(logit, -1)

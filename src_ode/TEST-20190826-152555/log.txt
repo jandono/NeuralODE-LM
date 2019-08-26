@@ -1,0 +1,11 @@
+Args: Namespace(alpha=2, batch_size=3, beta=1, bptt=70, clip=0.25, continue_train=False, cuda=False, data='../data/penn', dropout=0.4, dropoute=0.1, dropouth=0.225, dropouti=0.4, dropoutl=0.29, emsize=2, epochs=10, log_interval=1, lr=1.0, max_seq_len_delta=40, model='LSTM', nhid=2, nhidlast=2, nlayers=3, nonmono=5, optimizer='asgd', save='TEST-20190826-152555', seed=28, single_gpu=True, small_batch_size=3, tied=True, wdecay=1.2e-06, wdrop=0.5)
+Model total parameters: 80148
+| epoch   1 |     1/ 4426 batches | lr 1.00 | ms/batch 6261.05 | loss 18.72 | ppl 135444620.51
+| epoch   1 |     2/ 4426 batches | lr 1.00 | ms/batch 3472.73 | loss  9.31 | ppl 11034.77
+| epoch   1 |     3/ 4426 batches | lr 1.00 | ms/batch 3987.44 | loss  9.33 | ppl 11226.36
+| epoch   1 |     4/ 4426 batches | lr 1.00 | ms/batch 2097.76 | loss  9.33 | ppl 11230.58
+| epoch   1 |     5/ 4426 batches | lr 1.00 | ms/batch 4560.34 | loss  9.24 | ppl 10323.87
+| epoch   1 |     6/ 4426 batches | lr 1.00 | ms/batch 4162.65 | loss  9.19 | ppl  9799.86
+| epoch   1 |     7/ 4426 batches | lr 1.00 | ms/batch 4649.05 | loss  9.15 | ppl  9460.14
+-----------------------------------------------------------------------------------------
+Exiting from training early
