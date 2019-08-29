@@ -130,24 +130,29 @@ class RNNModel(nn.Module):
     def __init__(self, rnn_type, ntoken, ninp, nhid, nhidlast, nlayers,
                  decoder_log_pz0,
                  dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0,
-                 tie_weights=False, ldropout=0.5, use_dropout=True):
+                 tie_weights=False, ldropout=0.6,
+                 n_experts=10, num4embed=0, num4first=0, num4second=0,
+                 use_dropout=True):
         super(RNNModel, self).__init__()
 
-        self.use_dropout = use_dropout
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
 
         self.rnns = [torch.nn.LSTM(ninp if l == 0 else nhid, nhid if l != nlayers - 1 else nhidlast, 1, dropout=0) for l
                      in range(nlayers)]
-
         if wdrop:
-            self.rnns = [WeightDrop(rnn, ['weight_hh_l0'], dropout=wdrop if self.use_dropout else 0) for rnn in
-                         self.rnns]
+            self.rnns = [WeightDrop(rnn, ['weight_hh_l0'], dropout=wdrop) for rnn in self.rnns]
         self.rnns = torch.nn.ModuleList(self.rnns)
 
-        if nhidlast != ninp:
-            self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
-
+        self.all_experts = n_experts + num4embed + num4first + num4second
+        self.prior = nn.Linear(nhidlast, self.all_experts, bias=False)
+        self.latent = nn.Linear(nhidlast, n_experts * ninp)
+        if num4embed > 0:
+            self.weight4embed = nn.Linear(ninp, num4embed * ninp)
+        if num4first > 0:
+            self.weight4first = nn.Linear(nhid, num4first * ninp)
+        if num4second > 0:
+            self.weight4second = nn.Linear(nhid, num4second * ninp)
         self.decoder = nn.Linear(ninp, ntoken)
         self.cnf = CNFBlock(ninp, ntoken)
 
@@ -158,10 +163,13 @@ class RNNModel(nn.Module):
         # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
         # https://arxiv.org/abs/1611.01462
         if tie_weights:
-            if nhidlast != ninp:
-                raise ValueError('When using the tied flag, nhid must be equal to emsize')
+            # if nhid != ninp:
+            #    raise ValueError('When using the tied flag, nhid must be equal to emsize')
             self.decoder.weight = self.encoder.weight
 
+        self.num4embed = num4embed
+        self.num4first = num4first
+        self.num4second = num4second
         self.init_weights()
 
         self.rnn_type = rnn_type
@@ -169,13 +177,13 @@ class RNNModel(nn.Module):
         self.nhid = nhid
         self.nhidlast = nhidlast
         self.nlayers = nlayers
-        self.decoder_log_pz0 = decoder_log_pz0
         self.dropout = dropout
         self.dropouti = dropouti
         self.dropouth = dropouth
         self.dropoute = dropoute
-        self.ldropout = ldropout
         self.dropoutl = ldropout
+        self.n_experts = n_experts
+        self.decoder_log_pz0 = decoder_log_pz0
         self.ntoken = ntoken
 
         size = 0
@@ -186,18 +194,30 @@ class RNNModel(nn.Module):
     def init_weights(self):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
-        # self.decoder.bias.data.fill_(0)
-        # self.decoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.fill_(0)
+        self.decoder.weight.data.uniform_(-initrange, initrange)
+        self.latent.bias.data.fill_(0)
+        if self.num4embed > 0:
+            self.weight4embed.bias.data.fill_(0)
+        if self.num4first > 0:
+            self.weight4first.bias.data.fill_(0)
+        if self.num4second > 0:
+            self.weight4second.bias.data.fill_(0)
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
-
         batch_size = input.size(1)
 
-        emb = embedded_dropout(self.encoder, input,
-                               dropout=self.dropoute if (self.training and self.use_dropout) else 0)
+        emb = embedded_dropout(self.encoder, input, dropout=self.dropoute if self.training else 0)
         # emb = self.idrop(emb)
 
-        emb = self.lockdrop(emb, self.dropouti if self.use_dropout else 0)
+        emb = self.lockdrop(emb, self.dropouti)
+        list4mos = []
+        if self.num4embed > 0:
+            embed4mos = nn.functional.tanh(self.weight4embed(emb))
+            embed4mos = embed4mos.view(emb.size(0), emb.size(1), self.num4embed, self.ninp).transpose(1, 2).transpose(1,
+                                                                                          0).contiguous()
+            embed4mos = embed4mos.view(-1, emb.size(1), self.ninp)
+            list4mos.extend(list(torch.chunk(embed4mos, self.num4embed, 0)))
 
         raw_output = emb
         new_hidden = []
@@ -211,31 +231,50 @@ class RNNModel(nn.Module):
             raw_outputs.append(raw_output)
             if l != self.nlayers - 1:
                 # self.hdrop(raw_output)
-                raw_output = self.lockdrop(raw_output, self.dropouth if self.use_dropout else 0)
+                raw_output = self.lockdrop(raw_output, self.dropouth)
                 outputs.append(raw_output)
+                if l == 0 and self.num4first > 0:
+                    first4mos = nn.functional.tanh(self.weight4first(raw_output))
+                    first4mos = first4mos.view(raw_output.size(0), raw_output.size(1), self.num4first,
+                                               self.ninp).transpose(1, 2).transpose(1, 0).contiguous()
+                    first4mos = first4mos.view(-1, raw_output.size(1), self.ninp)
+                    list4mos.extend(list(torch.chunk(first4mos, self.num4first, 0)))
+                if l == 1 and self.num4second > 0:
+                    second4mos = nn.functional.tanh(self.weight4second(raw_output))
+                    second4mos = second4mos.view(raw_output.size(0), raw_output.size(1), self.num4second,
+                                                 self.ninp).transpose(1, 2).transpose(1, 0).contiguous()
+                    second4mos = second4mos.view(-1, raw_output.size(1), self.ninp)
+                    list4mos.extend(list(torch.chunk(second4mos, self.num4second, 0)))
         hidden = new_hidden
 
-        output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
+        output = self.lockdrop(raw_output, self.dropout)
         outputs.append(output)
 
-        if self.nhidlast != self.ninp:
-            output = self.latent(output)
+        latent = nn.functional.tanh(self.latent(output))
+        # apply same mask to all context vec
+        transd = latent.view(
+            raw_output.size(0), raw_output.size(1), self.n_experts, -1
+        ).transpose(1, 2).transpose(1, 0).contiguous().view(-1, raw_output.size(1), self.ninp)
 
-        ############################################################
-        # Regular LM
-        ############################################################
-        #
-        # logit = self.decoder(output)
-        # prob = nn.functional.softmax(logit, -1)
-        #
-        ############################################################
+        list4mos.extend(list(torch.chunk(transd, self.n_experts, 0)))
+        concated = torch.cat(list4mos, 1)
+        dropped = self.lockdrop(concated.view(-1, raw_output.size(1), self.ninp), self.dropoutl)
+        contextvec = dropped.view(
+            raw_output.size(0), self.all_experts, raw_output.size(1), self.ninp).transpose(1, 2).contiguous()
+        logit = self.decoder(contextvec.view(-1, self.ninp))
+
+        prior_logit = self.prior(output).view(-1, self.all_experts)
+        prior = nn.functional.softmax(prior_logit)
+
+        prob = nn.functional.softmax(logit.view(-1, self.ntoken)).view(-1, self.all_experts, self.ntoken)
+        prob = (prob * prior.unsqueeze(2).expand_as(prob)).sum(1)
 
         ############################################################
         # Continuous Normalizing Flows
         ############################################################
 
         if self.decoder_log_pz0:
-            log_pz0 = self.decoder(output)
+            log_pz0 = torch.log(prob.add_(1e-8))
         else:
             log_pz0 = None
 
@@ -251,9 +290,10 @@ class RNNModel(nn.Module):
             model_output = log_prob
 
         model_output = model_output.view(-1, batch_size, self.ntoken)
+        prior = prior.view(-1, batch_size, self.all_experts)
 
         if return_h:
-            return model_output, hidden, raw_outputs, outputs
+            return model_output, hidden, raw_outputs, outputs, prior
         return model_output, hidden
 
     def init_hidden(self, bsz):

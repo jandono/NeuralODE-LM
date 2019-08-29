@@ -68,10 +68,20 @@ parser.add_argument('--alpha', type=float, default=2,
                     help='alpha L2 regularization on RNN activation (alpha = 0 means no regularization)')
 parser.add_argument('--beta', type=float, default=1,
                     help='beta slowness regularization applied on RNN activiation (beta = 0 means no regularization)')
+parser.add_argument('--var', type=float, default=0,
+    help='regularization for prior')
 parser.add_argument('--wdecay', type=float, default=1.2e-6,
                     help='weight decay applied to all weights')
 parser.add_argument('--continue_train', action='store_true',
                     help='continue train from a checkpoint')
+parser.add_argument('--n_experts', type=int, default=10,
+                    help='number of experts')
+parser.add_argument('--num4second', type=int, default=0,
+                    help='the number of softmax for second layer')
+parser.add_argument('--num4first', type=int, default=0,
+                    help='the number of softmax for first layer')
+parser.add_argument('--num4embed', type=int, default=0,
+                    help='the number of softmax for embeddings')
 parser.add_argument('--small_batch_size', type=int, default=-1,
                     help='the batch size for computation. batch_size should be divisible by small_batch_size.\
                      In our implementation, we compute gradients with small_batch_size multiple times, and accumulate\
@@ -150,7 +160,9 @@ else:
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
                            args.decoder_log_pz0,
                            args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-                           args.tied, args.dropoutl, use_dropout)
+                           args.tied, args.dropoutl,
+                           args.n_experts, args.num4embed, args.num4first, args.num4second,
+                           use_dropout)
 
     if args.transfer is not None:
         copy_model = torch.load(args.transfer, map_location='cpu')
@@ -241,11 +253,12 @@ def train():
         start, end, s_id = 0, args.small_batch_size, 0
         while start < args.batch_size:
             cur_data, cur_targets = data[:, start: end], targets[:, start: end].contiguous().view(-1)
+
             # Starting each batch, we detach the hidden state from how it was previously produced.
             # If we didn't, the model would try backpropagating all the way to start of the dataset.
             hidden[s_id] = repackage_hidden(hidden[s_id])
 
-            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs = parallel_model(cur_data, hidden[s_id], return_h=True)
+            log_prob, hidden[s_id], rnn_hs, dropped_rnn_hs, prior = parallel_model(cur_data, hidden[s_id], return_h=True)
             raw_loss = nn.functional.nll_loss(log_prob.view(-1, log_prob.size(2)), cur_targets)
 
             loss = raw_loss
@@ -253,6 +266,13 @@ def train():
             loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
             # Temporal Activation Regularization (slowness)
             loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
+
+            #regularize for prior
+            prior_sum = prior.sum(0)
+            cv = (prior_sum.var() * (prior_sum.size(1) - 1)).sqrt() / prior_sum.mean()
+            # loss = loss + sum(args.var * cv * cv)
+            loss = loss + torch.sum(args.var * cv * cv)
+
             loss *= args.small_batch_size / args.batch_size
             total_loss += raw_loss.data * args.small_batch_size / args.batch_size
 
@@ -366,7 +386,6 @@ try:
                 optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
                 #optimizer.param_groups[0]['lr'] /= 2.
             best_val_loss.append(val_loss)
-
 
 except KeyboardInterrupt:
     logging('-' * 89)
