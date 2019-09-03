@@ -135,7 +135,7 @@ class RNNModel(nn.Module):
                  use_dropout=True):
         super(RNNModel, self).__init__()
 
-        self.use_dropout = True
+        self.use_dropout = use_dropout
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
 
