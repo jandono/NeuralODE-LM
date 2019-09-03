@@ -71,9 +71,10 @@ class RNNModel(nn.Module):
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nhidlast, nlayers,
                  dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0,
-                 tie_weights=False, ldropout=0.5):
+                 tie_weights=False, ldropout=0.5, use_dropout=True):
         super(RNNModel, self).__init__()
-        self.use_dropout = True
+
+        self.use_dropout = use_dropout
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
 

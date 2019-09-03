@@ -85,6 +85,11 @@ parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
 parser.add_argument('--optimizer', type=str, choices=['asgd', 'adam'], required=True,
                     help='Optimizer to be used for training.')
+parser.add_argument('--transfer', type=str, help='Location to a pretrained LM model,\
+                    for weight initialization.')
+parser.add_argument('--freeze', default=False, action='store_true',
+                    help='To be used in conjunction with --transfer, to specify whether\
+                    transferred weights should be freezed.')
 args = parser.parse_args()
 
 if args.nhidlast < 0:
@@ -133,19 +138,40 @@ test_data = batchify(corpus.test, test_batch_size, args)
 # Build the model
 ###############################################################################
 
+###############################################################################
+# Build the model
+###############################################################################
+
 ntokens = len(corpus.dictionary)
 if args.continue_train:
     model = torch.load(os.path.join(args.save, 'model.pt'))
 else:
-    # COMMENTED OUT BY JOVAN, THIS IS HOW YOU CREATE A MODEL IF YOU WANT TO USE MOS
-    # model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
-    #                    args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-    #                    args.tied, args.dropoutl, args.n_experts)
+    if args.freeze:
+        use_dropout = False
+    else:
+        use_dropout = True
 
-    # ADDED BY JOVAN, REMOVED THE args.n_experts PARAMETER
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
                            args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-                           args.tied, args.dropoutl)
+                           args.tied, args.dropoutl, use_dropout)
+
+    if args.transfer is not None:
+        copy_model = torch.load(args.transfer, map_location='cpu')
+
+        for name, param in model.named_parameters():
+            if name in copy_model.state_dict():
+                param.data = copy_model.state_dict()[name].data
+
+                if args.freeze:
+                    param.requires_grad = False
+
+        print('Trainable params')
+        for name, param in model.named_parameters():
+            if param.requires_grad:
+                print(name)
+            else:
+                assert torch.all(torch.eq(param, copy_model.state_dict()[name]))
+
 
 if args.cuda:
     if args.single_gpu:
@@ -157,9 +183,10 @@ else:
 
 total_params = sum(x.data.nelement() for x in model.parameters())
 logging('Args: {}'.format(args))
-logging('Model total parameters: {}'.format(total_params))
+# logging('Model total parameters: {}'.format(total_params))
 
 criterion = nn.CrossEntropyLoss()
+
 
 
 ###############################################################################

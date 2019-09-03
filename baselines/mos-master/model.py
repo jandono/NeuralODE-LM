@@ -15,6 +15,7 @@ class RNNModel(nn.Module):
                  dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0, 
                  tie_weights=False, ldropout=0.5, n_experts=10):
         super(RNNModel, self).__init__()
+
         self.use_dropout = True
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
@@ -67,6 +68,7 @@ class RNNModel(nn.Module):
         self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
+
         batch_size = input.size(1)
 
         emb = embedded_dropout(self.encoder, input, dropout=self.dropoute if (self.training and self.use_dropout) else 0)

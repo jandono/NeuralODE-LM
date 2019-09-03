@@ -162,11 +162,14 @@ criterion = nn.CrossEntropyLoss()
 
 def evaluate(data_source, batch_size=10):
     # Turn on evaluation mode which disables dropout.
+    # print('EVALUATING')
     model.eval()
     total_loss = 0
     ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(batch_size)
     for i in range(0, data_source.size(0) - 1, args.bptt):
+
+        # print('{} | {}'.format(i, data_source.size(0) - 1))
         data, targets = get_batch(data_source, i, args, evaluation=True)
         targets = targets.view(-1)
 
@@ -180,6 +183,7 @@ def evaluate(data_source, batch_size=10):
 
 
 def train():
+
     assert args.batch_size % args.small_batch_size == 0, 'batch_size must be divisible by small_batch_size'
 
     # Turn on training mode which enables dropout.
@@ -188,6 +192,8 @@ def train():
     ntokens = len(corpus.dictionary)
     hidden = [model.init_hidden(args.small_batch_size) for _ in range(args.batch_size // args.small_batch_size)]
     batch, i = 0, 0
+
+    # with torch.autograd.detect_anomaly():
     while i < train_data.size(0) - 1 - 1:
         bptt = args.bptt if np.random.random() < 0.95 else args.bptt / 2.
         # Prevent excessively small or negative sequence lengths
@@ -218,12 +224,15 @@ def train():
             loss = loss + sum(args.alpha * dropped_rnn_h.pow(2).mean() for dropped_rnn_h in dropped_rnn_hs[-1:])
             # Temporal Activation Regularization (slowness)
             loss = loss + sum(args.beta * (rnn_h[1:] - rnn_h[:-1]).pow(2).mean() for rnn_h in rnn_hs[-1:])
+
             #regularize for prior
             prior_sum = prior.sum(0)
             cv = (prior_sum.var() * (prior_sum.size(1) - 1)).sqrt() / prior_sum.mean()
             loss = loss + sum(args.var * cv * cv)
+
             loss *= args.small_batch_size / args.batch_size
             total_loss += raw_loss.data * args.small_batch_size / args.batch_size
+
             loss.backward()
 
             s_id += 1
@@ -250,6 +259,7 @@ def train():
         ###
         batch += 1
         i += seq_len
+
 
 # Loop over epochs.
 lr = args.lr

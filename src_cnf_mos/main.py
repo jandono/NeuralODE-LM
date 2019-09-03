@@ -78,6 +78,8 @@ parser.add_argument('--small_batch_size', type=int, default=-1,
                      the gradients until batch_size is reached. An update step is then performed.')
 parser.add_argument('--max_seq_len_delta', type=int, default=40,
                     help='max sequence length')
+parser.add_argument('--n_experts', type=int, default=10,
+                    help='number of experts')
 parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
 parser.add_argument('--decoder_log_pz0', default=False, action='store_true',
@@ -150,7 +152,7 @@ else:
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
                            args.decoder_log_pz0,
                            args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-                           args.tied, args.dropoutl, use_dropout)
+                           args.tied, args.dropoutl, args.n_experts, use_dropout)
 
     if args.transfer is not None:
         copy_model = torch.load(args.transfer, map_location='cpu')

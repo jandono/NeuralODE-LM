@@ -135,13 +135,14 @@ class RNNModel(nn.Module):
                  use_dropout=True):
         super(RNNModel, self).__init__()
 
+        self.use_dropout = True
         self.lockdrop = LockedDropout()
         self.encoder = nn.Embedding(ntoken, ninp)
 
         self.rnns = [torch.nn.LSTM(ninp if l == 0 else nhid, nhid if l != nlayers - 1 else nhidlast, 1, dropout=0) for l
                      in range(nlayers)]
         if wdrop:
-            self.rnns = [WeightDrop(rnn, ['weight_hh_l0'], dropout=wdrop) for rnn in self.rnns]
+            self.rnns = [WeightDrop(rnn, ['weight_hh_l0'], dropout=wdrop if self.use_dropout else 0) for rnn in self.rnns]
         self.rnns = torch.nn.ModuleList(self.rnns)
 
         self.all_experts = n_experts + num4embed + num4first + num4second
@@ -207,10 +208,10 @@ class RNNModel(nn.Module):
     def forward(self, input, hidden, return_h=False, return_prob=False):
         batch_size = input.size(1)
 
-        emb = embedded_dropout(self.encoder, input, dropout=self.dropoute if self.training else 0)
+        emb = embedded_dropout(self.encoder, input, dropout=self.dropoute if (self.training and self.use_dropout) else 0)
         # emb = self.idrop(emb)
 
-        emb = self.lockdrop(emb, self.dropouti)
+        emb = self.lockdrop(emb, self.dropouti if self.use_dropout else 0)
         list4mos = []
         if self.num4embed > 0:
             embed4mos = nn.functional.tanh(self.weight4embed(emb))
@@ -231,7 +232,7 @@ class RNNModel(nn.Module):
             raw_outputs.append(raw_output)
             if l != self.nlayers - 1:
                 # self.hdrop(raw_output)
-                raw_output = self.lockdrop(raw_output, self.dropouth)
+                raw_output = self.lockdrop(raw_output, self.dropouth if self.use_dropout else 0)
                 outputs.append(raw_output)
                 if l == 0 and self.num4first > 0:
                     first4mos = nn.functional.tanh(self.weight4first(raw_output))
@@ -247,7 +248,7 @@ class RNNModel(nn.Module):
                     list4mos.extend(list(torch.chunk(second4mos, self.num4second, 0)))
         hidden = new_hidden
 
-        output = self.lockdrop(raw_output, self.dropout)
+        output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
         outputs.append(output)
 
         latent = nn.functional.tanh(self.latent(output))
@@ -258,7 +259,7 @@ class RNNModel(nn.Module):
 
         list4mos.extend(list(torch.chunk(transd, self.n_experts, 0)))
         concated = torch.cat(list4mos, 1)
-        dropped = self.lockdrop(concated.view(-1, raw_output.size(1), self.ninp), self.dropoutl)
+        dropped = self.lockdrop(concated.view(-1, raw_output.size(1), self.ninp), self.dropoutl if self.use_dropout else 0)
         contextvec = dropped.view(
             raw_output.size(0), self.all_experts, raw_output.size(1), self.ninp).transpose(1, 2).contiguous()
         logit = self.decoder(contextvec.view(-1, self.ninp))

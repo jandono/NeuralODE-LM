@@ -43,10 +43,8 @@ class ODEnet(nn.Module):
     def __init__(self, dim):
         super(ODEnet, self).__init__()
         self.linear1 = layers.diffeq_layers.ConcatLinear(dim, dim)
-        self.linear2 = nn.Linear(dim, dim)
         self.soft_relu = nn.Softplus()
-
-        # self.init_weights()
+        self.linear2 = nn.Linear(dim, dim)
 
     def forward(self, t, x):
 
@@ -130,7 +128,7 @@ class RNNModel(nn.Module):
     def __init__(self, rnn_type, ntoken, ninp, nhid, nhidlast, nlayers,
                  decoder_log_pz0,
                  dropout=0.5, dropouth=0.5, dropouti=0.5, dropoute=0.1, wdrop=0,
-                 tie_weights=False, ldropout=0.5, use_dropout=True):
+                 tie_weights=False, ldropout=0.5, n_experts=10, use_dropout=True):
         super(RNNModel, self).__init__()
 
         self.use_dropout = use_dropout
@@ -145,8 +143,9 @@ class RNNModel(nn.Module):
                          self.rnns]
         self.rnns = torch.nn.ModuleList(self.rnns)
 
-        if nhidlast != ninp:
-            self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
+        # MOS ADDON
+        self.prior = nn.Linear(nhidlast, n_experts, bias=False)
+        self.latent = nn.Sequential(nn.Linear(nhidlast, n_experts*ninp), nn.Tanh())
 
         self.decoder = nn.Linear(ninp, ntoken)
         self.cnf = CNFBlock(ninp, ntoken)
@@ -176,6 +175,7 @@ class RNNModel(nn.Module):
         self.dropoute = dropoute
         self.ldropout = ldropout
         self.dropoutl = ldropout
+        self.n_experts = n_experts
         self.ntoken = ntoken
 
         size = 0
@@ -186,8 +186,8 @@ class RNNModel(nn.Module):
     def init_weights(self):
         initrange = 0.1
         self.encoder.weight.data.uniform_(-initrange, initrange)
-        # self.decoder.bias.data.fill_(0)
-        # self.decoder.weight.data.uniform_(-initrange, initrange)
+        self.decoder.bias.data.fill_(0)
+        self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden, return_h=False, return_prob=False):
 
@@ -218,12 +218,13 @@ class RNNModel(nn.Module):
         output = self.lockdrop(raw_output, self.dropout if self.use_dropout else 0)
         outputs.append(output)
 
-        if self.nhidlast != self.ninp:
-            output = self.latent(output)
 
         ############################################################
         # Regular LM
         ############################################################
+        #
+        # if self.nhidlast != self.ninp:
+        #     output = self.latent(output)
         #
         # logit = self.decoder(output)
         # prob = nn.functional.softmax(logit, -1)
@@ -231,13 +232,45 @@ class RNNModel(nn.Module):
         ############################################################
 
         ############################################################
+        # Mixture of Softmaxes
+        ############################################################
+
+        # output.shape = [seq_size, batch_size, nhidlast]
+        # print('output shape: ', output.shape)
+
+        latent = self.latent(output)
+        # latent.shape = [seq_size, batch_size, n_experts * ninp]
+        # print('latent.shape: ', latent.shape)
+
+        latent = self.lockdrop(latent, self.dropoutl if self.use_dropout else 0)
+        logit = self.decoder(latent.view(-1, self.ninp))
+        # logit.shape = [seq_size * batch_size * n_experts, ntoken]
+        # print('logit.shape: ', logit.shape)
+
+        prior_logit = self.prior(output).contiguous().view(-1, self.n_experts)
+        # prior_logit.shape = [seq_size * batch_size, n_experts]
+        # print('prior_logit.shape: ', prior_logit.shape)
+
+        prior = nn.functional.softmax(prior_logit, -1)
+        # prior.shape = [seq_size * batch_size, n_experts] normalized
+        # print('prior.shape: ', prior.shape)
+
+        prob = nn.functional.softmax(logit.view(-1, self.ntoken), -1).view(-1, self.n_experts, self.ntoken)
+        # prob.shape = [seq_size * batch_size, n_experts, ntoken]
+        # print('Pre prior multiply prob.shape: ', prob.shape)
+
+        prob = (prob * prior.unsqueeze(2).expand_as(prob)).sum(1)
+        # prob.shape = [batch-size * seq_size, ntoken
+        # print('Post prior multiply prob.shape: ', prob.shape)
+        # assert 1 == 0
+        ############################################################
+
+        ############################################################
         # Continuous Normalizing Flows
         ############################################################
 
-        if self.decoder_log_pz0:
-            log_pz0 = self.decoder(output)
-        else:
-            log_pz0 = None
+        # decoder_log_pz0 fixed to true
+        log_pz0 = torch.log(prob.add_(1e-8))
 
         log_pz1 = self.cnf(output, self.encoder.weight, log_pz0)
         prob = nn.functional.softmax(log_pz1, -1)
