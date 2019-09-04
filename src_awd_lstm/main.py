@@ -2,6 +2,8 @@ import argparse
 import time
 import math
 import sys
+import os
+import hashlib
 
 import numpy as np
 import torch
@@ -75,12 +77,15 @@ parser.add_argument('--freeze', default=False, action='store_true',
 args = parser.parse_args()
 args.tied = True
 
+if not os.path.exists(args.save):
+    os.mkdir(args.save)
+
 
 def logging(s, print_=True, log_=True):
     if print_:
         print(s)
     if log_:
-        with open(os.path.join(args.save + '_log.txt'), 'a+') as f_log:
+        with open(os.path.join(args.save, 'log.txt'), 'a+') as f_log:
             f_log.write(s + '\n')
 
     sys.stdout.flush()
@@ -101,17 +106,18 @@ if torch.cuda.is_available():
 # Load data
 ###############################################################################
 
+
 def model_save(fn):
-    with open(fn, 'wb') as f:
+    with open(os.path.join(fn, 'model.pt'), 'wb') as f:
         torch.save([model, criterion, optimizer], f)
+
 
 def model_load(fn):
     global model, criterion, optimizer
-    with open(fn, 'rb') as f:
+    with open(os.path.join(fn, 'model.pt'), 'rb') as f:
         model, criterion, optimizer = torch.load(f)
 
-import os
-import hashlib
+
 fn = 'corpus.{}.data'.format(hashlib.md5(args.data.encode()).hexdigest())
 if os.path.exists(fn):
     logging('Loading cached dataset...')
@@ -131,34 +137,45 @@ test_data = batchify(corpus.test, test_batch_size, args)
 # Build the model
 ###############################################################################
 
-from splitcross import SplitCrossEntropyLoss
+# from splitcross import SplitCrossEntropyLoss
 # criterion = None
 
 criterion = nn.CrossEntropyLoss()
 
 ntokens = len(corpus.dictionary)
 ###
+
+if args.freeze:
+    use_dropout = False
+else:
+    use_dropout = True
+
+
 if args.resume:
     logging('Resuming model ...')
     model_load(args.resume)
     optimizer.param_groups[0]['lr'] = args.lr
     model.dropouti, model.dropouth, model.dropout, args.dropoute = args.dropouti, args.dropouth, args.dropout, args.dropoute
-    if args.wdrop:
+
+    if args.wdrop and use_dropout:
         from weight_drop import WeightDrop
         for rnn in model.rnns:
             if type(rnn) == WeightDrop: rnn.dropout = args.wdrop
             elif rnn.zoneout > 0: rnn.zoneout = args.wdrop
 else:
-    if args.freeze:
-        use_dropout = False
-    else:
-        use_dropout = True
 
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nlayers, args.dropout, args.dropouth,
-                           args.dropouti, args.dropoute, args.wdrop, args.tied)
+                           args.dropouti, args.dropoute, args.wdrop, args.tied, use_dropout)
 
     if args.transfer is not None:
         copy_model = torch.load(args.transfer, map_location='cpu')
+        # print('Model')
+        # for name, param in model.named_parameters():
+        #     print(name)
+        # print('Copy')
+        # for name, param in copy_model[0].named_parameters():
+        #     print(name)
+        # assert 1 == 0
 
         for name, param in model.named_parameters():
             if name in copy_model[0].state_dict():
@@ -175,18 +192,18 @@ else:
                 assert torch.all(torch.eq(param, copy_model[0].state_dict()[name]))
 
 ###
-if not criterion:
-    splits = []
-    if ntokens > 500000:
-        # One Billion
-        # This produces fairly even matrix mults for the buckets:
-        # 0: 11723136, 1: 10854630, 2: 11270961, 3: 11219422
-        splits = [4200, 35000, 180000]
-    elif ntokens > 75000:
-        # WikiText-103
-        splits = [2800, 20000, 76000]
-    logging('Using', splits)
-    criterion = SplitCrossEntropyLoss(args.emsize, splits=splits, verbose=False)
+# if not criterion:
+#     splits = []
+#     if ntokens > 500000:
+#         # One Billion
+#         # This produces fairly even matrix mults for the buckets:
+#         # 0: 11723136, 1: 10854630, 2: 11270961, 3: 11219422
+#         splits = [4200, 35000, 180000]
+#     elif ntokens > 75000:
+#         # WikiText-103
+#         splits = [2800, 20000, 76000]
+#     logging('Using', splits)
+#     criterion = SplitCrossEntropyLoss(args.emsize, splits=splits, verbose=False)
 ##
 if args.cuda:
     model = model.cuda()
@@ -194,8 +211,8 @@ if args.cuda:
 ##
 params = list(model.parameters()) + list(criterion.parameters())
 total_params = sum(x.size()[0] * x.size()[1] if len(x.size()) > 1 else x.size()[0] for x in params if x.size())
-logging('Args:', args)
-logging('Model total parameters:', total_params)
+logging('Args: ' + str(args))
+logging('Model total parameters:' + str(total_params))
 
 ###############################################################################
 # Training code
