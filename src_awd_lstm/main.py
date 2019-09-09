@@ -74,6 +74,9 @@ parser.add_argument('--transfer', type=str, help='Location to a pretrained LM mo
 parser.add_argument('--freeze', default=False, action='store_true',
                     help='To be used in conjunction with --transfer, to specify whether\
                     transferred weights should be freezed.')
+parser.add_argument('--ode_dropout', type=float, default=0,
+                    help='dropout for ode layers, (0 = no dropout)')
+
 args = parser.parse_args()
 args.tied = True
 
@@ -107,8 +110,8 @@ if torch.cuda.is_available():
 ###############################################################################
 
 
-def model_save(fn):
-    with open(os.path.join(fn, 'model.pt'), 'wb') as f:
+def model_save(fn, addon=''):
+    with open(os.path.join(fn, 'model.pt') + addon, 'wb') as f:
         torch.save([model, criterion, optimizer], f)
 
 
@@ -352,7 +355,7 @@ try:
 
             if epoch in args.when:
                 logging('Saving model before learning rate decreased')
-                model_save('{}.e{}'.format(args.save, epoch))
+                model_save(args.save, '.' + str(epoch))
                 logging('Dividing learning rate by 10')
                 optimizer.param_groups[0]['lr'] /= 10.
 

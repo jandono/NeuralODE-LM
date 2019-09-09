@@ -142,8 +142,8 @@ token_prob_tensor = token_freq_tensor / torch.sum(token_freq_tensor)
 eval_batch_size = 10
 test_batch_size = 1
 train_data = batchify(corpus.train, args.batch_size, args)
-val_data = batchify(corpus.valid, eval_batch_size, args)
-test_data = batchify(corpus.test, test_batch_size, args)
+val_data = batchify(corpus.valid, eval_batch_size, args)[:args.val_mini]
+test_data = batchify(corpus.test, test_batch_size, args)[:args.val_mini]
 
 ###############################################################################
 # Build the model
@@ -321,8 +321,7 @@ def train():
 lr = args.lr
 best_val_loss = []
 stored_loss = 100000000
-stored_loss_mini = 100000000
-val_freq = 20
+
 # At any point you can hit Ctrl + C to break out of training early.
 try:
     if args.continue_train:
@@ -339,60 +338,46 @@ try:
         epoch_start_time = time.time()
         train()
 
-        if epoch > 0 and epoch % val_freq == 0:
-            if 't0' in optimizer.param_groups[0]:
-                tmp = {}
-                for prm in model.parameters():
-                    tmp[prm] = prm.data.clone()
-                    if 'ax' in optimizer.state[prm]:
-                        prm.data = optimizer.state[prm]['ax'].clone()
+        if 't0' in optimizer.param_groups[0]:
+            tmp = {}
+            for prm in model.parameters():
+                tmp[prm] = prm.data.clone()
+                if 'ax' in optimizer.state[prm]:
+                    prm.data = optimizer.state[prm]['ax'].clone()
 
-                val_loss2 = evaluate(val_data)
-                logging('-' * 89)
-                logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                        'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                                   val_loss2, math.exp(val_loss2)))
-                logging('-' * 89)
+            val_loss2 = evaluate(val_data)
+            logging('-' * 89)
+            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                               val_loss2, math.exp(val_loss2)))
+            logging('-' * 89)
 
-                if val_loss2 < stored_loss:
-                    save_checkpoint(model, optimizer, args.save)
-                    logging('Saving Averaged!')
-                    stored_loss = val_loss2
+            if val_loss2 < stored_loss:
+                save_checkpoint(model, optimizer, args.save)
+                logging('Saving Averaged!')
+                stored_loss = val_loss2
 
-                for prm in model.parameters():
-                    prm.data = tmp[prm].clone()
+            for prm in model.parameters():
+                prm.data = tmp[prm].clone()
 
-            else:
-                val_loss = evaluate(val_data, eval_batch_size)
-                logging('-' * 89)
-                logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
-                        'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                                   val_loss, math.exp(val_loss)))
-                logging('-' * 89)
-
-                if val_loss < stored_loss:
-                    save_checkpoint(model, optimizer, args.save)
-                    logging('Saving Normal!')
-                    stored_loss = val_loss
-
-                if 't0' not in optimizer.param_groups[0] and (len(best_val_loss)>args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
-                    logging('Switching!')
-                    optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
-                    #optimizer.param_groups[0]['lr'] /= 2.
-                best_val_loss.append(val_loss)
         else:
-
-            val_loss_mini = evaluate(val_data[:args.val_mini], eval_batch_size)
+            val_loss = evaluate(val_data, eval_batch_size)
             logging('-' * 89)
-            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss mini {:5.2f} | '
-                    'valid ppl mini {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
-                                                    val_loss_mini, math.exp(val_loss_mini)))
+            logging('| end of epoch {:3d} | time: {:5.2f}s | valid loss {:5.2f} | '
+                    'valid ppl {:8.2f}'.format(epoch, (time.time() - epoch_start_time),
+                                               val_loss, math.exp(val_loss)))
             logging('-' * 89)
 
-            if val_loss_mini < stored_loss_mini:
-                save_checkpoint(model, optimizer, args.save, append='_mini')
-                logging('Saving Model based on mini eval!')
-                stored_loss_mini = val_loss_mini
+            if val_loss < stored_loss:
+                save_checkpoint(model, optimizer, args.save)
+                logging('Saving Normal!')
+                stored_loss = val_loss
+
+            if 't0' not in optimizer.param_groups[0] and (len(best_val_loss)>args.nonmono and val_loss > min(best_val_loss[:-args.nonmono])):
+                logging('Switching!')
+                optimizer = torch.optim.ASGD(model.parameters(), lr=args.lr, t0=0, lambd=0., weight_decay=args.wdecay)
+                #optimizer.param_groups[0]['lr'] /= 2.
+            best_val_loss.append(val_loss)
 
 except KeyboardInterrupt:
     logging('-' * 89)

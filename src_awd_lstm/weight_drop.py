@@ -2,6 +2,7 @@ import torch
 from torch.nn import Parameter
 from functools import wraps
 
+
 class WeightDrop(torch.nn.Module):
     def __init__(self, module, weights, dropout=0, variational=False):
         super(WeightDrop, self).__init__()
@@ -45,6 +46,7 @@ class WeightDrop(torch.nn.Module):
     def forward(self, *args):
         self._setweights()
         return self.module.forward(*args)
+
 
 if __name__ == '__main__':
     import torch
