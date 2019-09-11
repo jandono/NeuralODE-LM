@@ -70,11 +70,6 @@ parser.add_argument('--wdecay', type=float, default=1.2e-6,
                     help='weight decay applied to all weights')
 parser.add_argument('--continue_train', action='store_true',
                     help='continue train from a checkpoint')
-
-# COMMENTED OUT BY JOVAN, THIS IS ONLY NEEDED FOR MOS
-# parser.add_argument('--n_experts', type=int, default=10,
-#                     help='number of experts')
-
 parser.add_argument('--small_batch_size', type=int, default=-1,
                     help='the batch size for computation. batch_size should be divisible by small_batch_size.\
                      In our implementation, we compute gradients with small_batch_size multiple times, and accumulate the gradients\
@@ -137,12 +132,6 @@ ntokens = len(corpus.dictionary)
 if args.continue_train:
     model = torch.load(os.path.join(args.save, 'model.pt'))
 else:
-    # COMMENTED OUT BY JOVAN, THIS IS HOW YOU CREATE A MODEL IF YOU WANT TO USE MOS
-    # model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
-    #                    args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
-    #                    args.tied, args.dropoutl, args.n_experts)
-
-    # ADDED BY JOVAN, REMOVED THE args.n_experts PARAMETER
     model = model.RNNModel(args.model, ntokens, args.emsize, args.nhid, args.nhidlast, args.nlayers,
                            args.dropout, args.dropouth, args.dropouti, args.dropoute, args.wdrop,
                            args.tied, args.dropoutl)

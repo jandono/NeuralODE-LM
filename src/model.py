@@ -8,54 +8,6 @@ from embed_regularize import embedded_dropout
 from locked_dropout import LockedDropout
 from weight_drop import WeightDrop
 
-# if args.adjoint:
-#     from torchdiffeq import odeint_adjoint as odeint
-# else:
-#     from torchdiffeq import odeint
-
-# from torchdiffeq import odeint_adjoint as odeint
-from torchdiffeq import odeint
-
-
-class ODEfunc(nn.Module):
-
-    def __init__(self, dim):
-        super(ODEfunc, self).__init__()
-        self.linear = nn.Linear(dim, dim)
-        self.relu = nn.ReLU(inplace=True)  # Inplace can cause problems
-        self.nfe = 0
-
-    def forward(self, t, x):
-        # For simple cases time can be omitted.
-        # However, for CNF they mention that they use a Hypernetwork or Concatenation
-        self.nfe += 1
-        out = self.linear(x)
-        out = self.relu(out)
-        return out
-
-
-class ODEBlock(nn.Module):
-
-    def __init__(self, odefunc, rtol, atol):
-        super(ODEBlock, self).__init__()
-        self.odefunc = odefunc
-        self.integration_time = torch.tensor([0, 1]).float()
-        self.rtol = rtol
-        self.atol = atol
-
-    def forward(self, x):
-        self.integration_time = self.integration_time.type_as(x)
-        out = odeint(self.odefunc, x, self.integration_time, rtol=self.rtol, atol=self.atol)
-        return out[1]
-
-    @property
-    def nfe(self):
-        return self.odefunc.nfe
-
-    @nfe.setter
-    def nfe(self, value):
-        self.odefunc.nfe = value
-
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -81,7 +33,6 @@ class RNNModel(nn.Module):
             self.latent = nn.Sequential(nn.Linear(nhidlast, ninp), nn.Tanh())
 
         self.decoder = nn.Linear(ninp, ntoken)
-        # self.ode = ODEBlock(ODEfunc(ntoken), 1e-3, 1e-3)
 
         # Optionally tie weights as in:
         # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
@@ -152,9 +103,6 @@ class RNNModel(nn.Module):
             output = self.latent(output)
 
         logit = self.decoder(output)
-        # transformed = self.ode(logit)
-
-        # prob = nn.functional.softmax(transformed, -1)
         prob = nn.functional.softmax(logit, -1)
 
         if return_prob:
