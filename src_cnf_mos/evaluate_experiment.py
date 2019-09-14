@@ -80,6 +80,8 @@ parser.add_argument('--single_gpu', default=False, action='store_true',
                     help='use single GPU')
 parser.add_argument('--exp', type=str,
                     help='Experiment location')
+parser.add_argument('--model_name', type=str,
+                    help='Model name')
 args = parser.parse_args()
 
 
@@ -138,26 +140,41 @@ def evaluate(data_source, batch_size=10):
     return total_loss.item() / len(data_source)
 
 
-experiments_dir = 'experiments'
+# experiments_dir = 'experiments'
+# logging_path = None
+
+# import shutil
+# model_name = args.exp
+
+# print('Evaluating model {}'.format(model_name))
+# Load the best saved model.
+# model_dir = os.path.join(experiments_dir, model_name)
+# model_file = 'scripts/model.py'
+
+# shutil.copy(os.path.join(model_dir, model_file), 'model.py')
+
+# experiments_dir = 'experiments'
 logging_path = None
 
 import shutil
-model_name = args.exp
+model_dir = args.exp
+model_name = args.model_name
 
 print('Evaluating model {}'.format(model_name))
 # Load the best saved model.
-model_dir = os.path.join(experiments_dir, model_name)
 model_file = 'scripts/model.py'
 
+
 shutil.copy(os.path.join(model_dir, model_file), 'model.py')
-# assert 1 == 0
 
 if args.cuda:
-    model = torch.load(os.path.join(model_dir, 'model.pt'))
+    model = torch.load(os.path.join(model_dir, model_name))
     parallel_model = nn.DataParallel(model, dim=1).cuda()
 else:
-    model = torch.load(os.path.join(model_dir, 'model.pt'), map_location='cpu')
+    model = torch.load(os.path.join(model_dir, model_name), map_location='cpu')
     parallel_model = nn.DataParallel(model, dim=1)
+
+# assert 1 == 0
 
 val_loss = evaluate(val_data, eval_batch_size)
 logging('#' * 89)
